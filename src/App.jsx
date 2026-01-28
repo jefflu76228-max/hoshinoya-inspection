@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
-const firebaseConfig = JSON.parse(__firebase_config);
+const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -23,7 +23,7 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Gemini API Helper ---
 const callGemini = async (prompt, isJson = false) => {
-  const apiKey = ""; 
+  const apiKey = import.meta.env.VITE_GEMINI_KEY;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
   
   const payload = {
