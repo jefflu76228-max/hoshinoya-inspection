@@ -11,17 +11,17 @@ import {
   Droplets, Bed, History, FileText, Tag, Plus,
   AlertOctagon, AlertCircle, Info, ThumbsUp, Users, Search,
   Edit2, Trash2, UserPlus, Sparkles, Loader2, FileJson, Download, PenTool,
-  MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock
+  MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, LayoutGrid
 } from 'lucide-react';
 
-// --- Firebase 初始設定 (已修正為 Vercel 專用讀取方式) ---
+// --- Firebase 初始設定 (已修正為 Vercel 專用插座) ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'hoshinoya-guguan-app';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'hoshinoya-guguan-main';
 
-// --- Gemini API 輔助函式 (已修正為 Vercel 專用讀取方式) ---
+// --- Gemini API 輔助函式 (已修正為 Vercel 專用插座) ---
 const callGemini = async (prompt, isJson = false) => {
   const apiKey = import.meta.env.VITE_GEMINI_KEY; 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
@@ -56,23 +56,13 @@ const LoadingSpinner = () => (
   </div>
 );
 
-// --- 常數定義 ---
-const FLOORS = [
-  { floor: 2, start: 201, end: 213, skip: [] },
-  { floor: 3, start: 301, end: 313, skip: [] },
-  { floor: 4, start: 401, end: 412, skip: [404] },
-  { floor: 5, start: 501, end: 513, skip: [511] },
+// --- 房號配置 ---
+const FLOORS_DATA = [
+  { floor: 2, rooms: ["201", "202", "203", "204", "205", "206", "207", "208", "209", "210", "211", "212", "213"] },
+  { floor: 3, rooms: ["301", "302", "303", "304", "305", "306", "307", "308", "309", "310", "311", "312", "313"] },
+  { floor: 4, rooms: ["401", "402", "403", "404", "405", "406", "407", "408", "409", "410", "411", "412"] },
+  { floor: 5, rooms: ["501", "502", "503", "504", "505", "506", "507", "508", "509", "510", "511", "512", "513"] },
 ];
-
-const ROOM_LIST = (() => {
-  const rooms = [];
-  FLOORS.forEach(f => {
-    for (let i = f.start; i <= f.end; i++) {
-      if (!f.skip.includes(i)) rooms.push(i.toString());
-    }
-  });
-  return rooms;
-})();
 
 const INITIAL_STAFF = [
   "王 佩貞", "何 欣怡", "何 渝沁", "吳 怡錚", "吳 至真", "吳 莉琦", "吳 瑞元", "宋 任翔", 
@@ -146,9 +136,27 @@ const TEAMS_INFO = {
 };
 
 const ERROR_GRADES = {
-  A: { label: 'A級 (不通過)', icon: <AlertOctagon size={18}/>, color: 'bg-[#8B3A3A] text-white border-none shadow-md shadow-red-900/20' },
-  B: { label: 'B級 (扣10分)', icon: <AlertTriangle size={18}/>, color: 'bg-[#D97706] text-white border-none shadow-md shadow-orange-900/20' },
-  C: { label: 'C級 (扣2-5分)', icon: <Info size={18}/>, color: 'bg-[#B45309] text-white border-none shadow-md shadow-yellow-900/20' },
+  A: { 
+    label: 'A級 (嚴重)', 
+    subLabel: '不通過 / 客訴風險',
+    icon: <AlertOctagon size={20}/>, 
+    color: 'bg-[#8B3A3A] text-white border-none shadow-md shadow-red-900/30',
+    badge: 'bg-red-100 text-red-800 border-red-200'
+  },
+  B: { 
+    label: 'B級 (中等)', 
+    subLabel: '扣10分 / 品質缺失',
+    icon: <AlertTriangle size={20}/>, 
+    color: 'bg-[#D97706] text-white border-none shadow-md shadow-orange-900/30',
+    badge: 'bg-orange-100 text-orange-800 border-orange-200'
+  },
+  C: { 
+    label: 'C級 (輕微)', 
+    subLabel: '扣2-5分 / 細節微調',
+    icon: <Info size={20}/>, 
+    color: 'bg-[#B45309] text-white border-none shadow-md shadow-yellow-900/30',
+    badge: 'bg-yellow-100 text-yellow-800 border-yellow-200'
+  },
 };
 
 // --- 輔助函式 ---
@@ -173,6 +181,26 @@ const compressImage = (file) => {
   });
 };
 
+const drawCircleOnImage = (imageSrc, x, y) => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = imageSrc;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      ctx.beginPath();
+      ctx.arc(x, y, 50, 0, 2 * Math.PI);
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = '#EF4444';
+      ctx.stroke();
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+  });
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home'); 
@@ -189,6 +217,7 @@ export default function App() {
   
   // 視窗狀態
   const [showIssueModal, setShowIssueModal] = useState(false);
+  const [showRoomModal, setShowRoomModal] = useState(false);
   const [currentIssue, setCurrentIssue] = useState({ team: 'water', title: '', grade: 'C', note: '', photo: null, isCustom: false });
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null); 
   const [previewImage, setPreviewImage] = useState(null); 
@@ -208,24 +237,39 @@ export default function App() {
 
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // --- 函數定義 ---
-  const saveIssue = () => {
+  // --- 函數提升定義 ---
+
+  function saveIssue() {
     if (!currentIssue.title) {
         alert("請輸入缺失內容");
         return;
     }
     setIssues([...issues, { ...currentIssue, id: Date.now() }]);
     setShowIssueModal(false);
-  };
+  }
 
-  const handleExportCSV = () => {
+  async function handleAiRefine() {
+    if (!currentIssue.note) return;
+    setIsAiLoading(true);
+    try {
+      const prompt = `你是房務檢查員。改寫筆記為專業描述並判斷等級。筆記：${currentIssue.note}。回傳JSON: { "title": "...", "note": "...", "grade": "A"|"B"|"C" }`;
+      const txt = await callGemini(prompt, true);
+      if (txt) {
+        const res = JSON.parse(txt);
+        setCurrentIssue(p => ({ ...p, title: res.title, note: res.note, grade: res.grade }));
+      }
+    } catch (e) { console.error(e); } 
+    finally { setIsAiLoading(false); }
+  }
+
+  function handleExportCSV() {
     if (roomsData.length === 0) return;
     const headers = ["日期", "房號", "查房員", "床組人員", "水組人員", "缺失組別", "缺失項目", "等級", "備註"];
     const csvRows = [];
     roomsData.forEach(room => {
       const date = room.createdAt?.seconds ? new Date(room.createdAt.seconds * 1000).toLocaleDateString('zh-TW') : '';
       if (!room.issues || room.issues.length === 0) {
-        csvRows.push([date, room.roomId, room.inspector, room.bedStaff || '待補', room.waterStaff || '待補', "N/A", "無 (PASS)", ""]);
+        csvRows.push([date, room.roomId, room.inspector, room.bedStaff || '待補', room.waterStaff || '待補', "N/A", "無 (PASS)", "", ""]);
       } else {
         room.issues.forEach(issue => {
           csvRows.push([
@@ -242,25 +286,28 @@ export default function App() {
     link.href = URL.createObjectURL(blob);
     link.download = `Hoshinoya_Records_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
-  };
+  }
 
-  const executeDelete = async () => {
+  async function executeDelete() {
     if (resetPwd !== '5656') { alert("密碼錯誤"); return; }
+    
     setLoading(true);
     try {
       if (resetMode === 'all') {
-        if (!confirm("確定要重置所有紀錄嗎？")) { setLoading(false); return; }
-        const snapshot = await getDocs(query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections')));
+        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'));
+        const snapshot = await getDocs(q);
         const deletePromises = snapshot.docs.map(d => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', d.id)));
         await Promise.all(deletePromises);
+        alert("數據已清空");
       } else {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', targetDeleteId));
+        alert("紀錄已刪除");
       }
       setShowResetModal(false); setResetPwd(''); setTargetDeleteId(null);
     } catch (e) { alert("操作失敗"); } finally { setLoading(false); }
-  };
+  }
 
-  const selectStaff = async (name) => {
+  async function selectStaff(name) {
     if (!historyEditTarget) {
       if (staffModalTarget === 'inspector') { setInspectorName(name); localStorage.setItem('lastInspector', name); }
       else if (staffModalTarget === 'bed') setBedStaff(name);
@@ -276,30 +323,43 @@ export default function App() {
         setHistoryEditTarget(null); setShowStaffModal(false);
       } catch(e) { alert("更新失敗"); }
     }
-  };
+  }
 
-  const handleSubmitInspection = async () => {
+  function openHistoryStaffEdit(recordId, type) {
+    setHistoryEditTarget({ docId: recordId, type });
+    setStaffModalTarget(type); 
+    setStaffSearch('');
+    setIsEditMode(false);
+    setShowStaffModal(true);
+  }
+
+  async function handleSubmitInspection() {
     if (!selectedRoom || !inspectorName) return alert("請填寫房號與查房員");
+    if ((!bedStaff || !waterStaff) && !confirm("人員未選齊，確定提交？")) return;
     const payload = {
       roomId: String(selectedRoom), 
       inspector: String(inspectorName), 
       bedStaff: String(bedStaff || ''), 
       waterStaff: String(waterStaff || ''), 
-      issues, 
+      issues: issues || [], 
       issueCount: issues.length, 
       hasGradeA: issues.some(i => i.grade === 'A'),
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      monthKey: new Date().toISOString().slice(0, 7)
     };
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'), payload);
       setSelectedRoom(''); setBedStaff(''); setWaterStaff(''); setIssues([]); setView('home');
       alert("提交成功!");
     } catch (e) { alert("提交失敗"); }
-  };
+  }
 
   // --- Auth & 資料監聽 ---
   useEffect(() => {
-    signInAnonymously(auth);
+    const initAuth = async () => {
+        await signInAnonymously(auth);
+    };
+    initAuth();
     const savedInspector = localStorage.getItem('lastInspector');
     if (savedInspector) setInspectorName(savedInspector);
     const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
@@ -309,160 +369,283 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'));
-    return onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setRoomsData(data);
       setLoading(false);
+    }, (err) => {
+      console.error(err);
+      setLoading(false);
     });
+    return () => unsubscribe();
   }, [user]);
 
-  // --- 畫面渲染 ---
-  const renderHome = () => (
-    <div className="flex flex-col h-full bg-[#F5F5F0]">
-      <div className="bg-[#2C2C2C] text-white p-8 pt-14 pb-12 rounded-b-[40px] shadow-2xl text-center">
-        <h1 className="text-3xl font-serif tracking-[0.2em] mb-1">HOSHINOYA</h1>
-        <p className="text-[#888] text-xs tracking-[0.3em] uppercase">Guguan Housekeeping</p>
-      </div>
-      <div className="flex-1 px-6 py-8 space-y-5 -mt-6">
-        <button onClick={() => setView('inspect')} className="w-full bg-white p-6 rounded-2xl shadow-xl border flex items-center justify-between active:scale-95 transition-all">
-          <div className="flex items-center gap-5">
-            <div className="bg-[#2C2C2C] text-white p-4 rounded-full shadow-lg"><CheckCircle size={28} /></div>
-            <div className="text-left"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1 tracking-widest uppercase">Start Inspection</p></div>
-          </div>
-          <ChevronRight size={20} className="text-[#CCC]" />
-        </button>
-        <div className="grid grid-cols-2 gap-4">
-          <button onClick={() => setView('history')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#EBF2F2] p-3 rounded-full text-[#4A6C6F]"><History size={24} /></div><span className="font-medium text-sm tracking-widest">歷史紀錄</span></button>
-          <button onClick={() => setView('analytics')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#F5F0EB] p-3 rounded-full text-[#8B5E3C]"><BarChart2 size={24} /></div><span className="font-medium text-sm tracking-widest">數據統計</span></button>
-        </div>
-      </div>
-    </div>
-  );
+  // --- 統計過濾邏輯 ---
+  const getMonthlyStats = () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const filtered = roomsData.filter(r => r.monthKey === currentMonth || !r.monthKey); 
+    
+    const issueCounts = filtered.flatMap(r => r.issues || []).reduce((acc, curr) => {
+      const title = String(curr.title);
+      if (title) acc[title] = (acc[title] || 0) + 1;
+      return acc;
+    }, {});
+
+    const topIssues = Object.entries(issueCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5);
+
+    return {
+      monthlyCount: filtered.length,
+      totalIssues: filtered.reduce((a, c) => a + (c.issueCount || 0), 0),
+      topIssues
+    };
+  };
+
+  const { monthlyCount, totalIssues, topIssues } = getMonthlyStats();
 
   if (loading) return <LoadingSpinner />;
 
   return (
     <div className="bg-[#E0E0E0] min-h-screen font-sans text-[#2C2C2C] md:max-w-md md:mx-auto md:shadow-2xl md:relative h-screen overflow-hidden">
       <div className="h-full bg-[#F5F5F0]">
-        {view === 'home' && renderHome()}
-        {view === 'inspect' && (
-            <div className="flex flex-col h-full bg-[#F5F5F0]">
-              <div className="bg-white/80 backdrop-blur-md px-6 py-4 shadow-sm flex justify-between items-center sticky top-0 z-20 border-b">
-                <button onClick={() => setView('home')} className="p-2"><X size={24} /></button>
-                <div className="relative">
-                  <select value={selectedRoom} onChange={e => setSelectedRoom(e.target.value)} className="appearance-none bg-[#F0F0F0] text-[#2C2C2C] font-serif font-bold text-lg py-2 px-8 rounded-full border-none outline-none">
-                    <option value="">選擇房號</option>{ROOM_LIST.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] pointer-events-none" />
+        {view === 'home' && (
+          <div className="flex flex-col h-full bg-[#F5F5F0]">
+            <div className="bg-[#2C2C2C] text-white p-8 pt-14 pb-12 rounded-b-[40px] shadow-2xl relative overflow-hidden text-center">
+              <h1 className="text-3xl font-serif tracking-[0.2em] mb-1">HOSHINOYA</h1>
+              <p className="text-[#888] text-xs tracking-[0.3em] uppercase font-sans">Guguan Housekeeping</p>
+            </div>
+            <div className="flex-1 px-6 py-8 space-y-5 -mt-6">
+              <button onClick={() => setView('inspect')} className="w-full bg-white p-6 rounded-2xl shadow-xl border border-white/50 flex items-center justify-between active:scale-95 transition-all">
+                <div className="flex items-center gap-5">
+                  <div className="bg-[#2C2C2C] text-white p-4 rounded-full shadow-lg"><CheckCircle size={28} /></div>
+                  <div className="text-left"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1 tracking-widest uppercase font-sans">Start Inspection</p></div>
                 </div>
-                <div className="w-10"></div>
-              </div>
-              <div className="flex-1 overflow-y-auto pb-32 p-5 space-y-6">
-                <div className="grid grid-cols-3 gap-3">
-                  {['inspector', 'water', 'bed'].map(t => (
-                    <div key={t} onClick={() => { setStaffModalTarget(t); setShowStaffModal(true); }} className="flex flex-col items-center p-3 rounded-xl border bg-white border-[#EEE] cursor-pointer">
-                      <span className="text-[10px] text-[#888] font-bold uppercase tracking-widest mb-1">{t === 'inspector' ? '查房員*' : t === 'water' ? '水組' : '床組'}</span>
-                      <div className="font-bold text-sm truncate w-full text-center">{String(t === 'inspector' ? (inspectorName || '+') : t === 'water' ? (waterStaff || '待定') : (bedStaff || '待定'))}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="bg-white p-1 rounded-2xl shadow-sm border flex">
-                  {Object.values(TEAMS_INFO).map(t => (
-                    <button key={t.id} onClick={() => setActiveTab(t.id.toLowerCase())} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${activeTab === t.id.toLowerCase() ? t.color : 'text-[#999]'}`}>{t.icon}<span>{String(t.name)}</span></button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                    {TEAMS_INFO[activeTab.toUpperCase()].issues.map((issue, idx) => (
-                      <button key={idx} onClick={() => { setCurrentIssue({ team: activeTab, title: issue.label, grade: issue.grade, note: '', photo: null, isCustom: false }); setShowIssueModal(true); }} className={`p-4 rounded-xl border text-left bg-white shadow-sm ${issue.color} border-transparent active:scale-95`}>
-                        <div className="font-bold text-lg mb-1">{String(issue.label)}</div>
-                        <div className="flex justify-between items-end"><span className="text-sm text-[#666] leading-tight w-2/3">{String(issue.desc)}</span><span className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-white/80">{String(issue.grade)}</span></div>
-                      </button>
-                    ))}
-                </div>
-              </div>
-              <div className="fixed bottom-0 left-0 right-0 bg-white/90 p-5 border-t z-30 md:absolute">
-                <button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 active:scale-95"><Save size={20} />提交紀錄</button>
+                <ChevronRight size={20} className="text-[#CCC]" />
+              </button>
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={() => setView('history')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#EBF2F2] p-3 rounded-full text-[#4A6C6F]"><History size={24} /></div><span className="font-medium text-sm tracking-widest">歷史紀錄</span></button>
+                <button onClick={() => setView('analytics')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#F5F0EB] p-3 rounded-full text-[#8B5E3C]"><BarChart2 size={24} /></div><span className="font-medium text-sm tracking-widest">數據統計</span></button>
               </div>
             </div>
+          </div>
         )}
-        {view === 'history' && (
-            <div className="flex flex-col h-full bg-[#F5F5F0]">
-              <div className="bg-white/80 px-6 py-4 border-b flex justify-between items-center">
-                <div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">歷史紀錄</h2></div>
-                <button onClick={() => { setResetMode('all'); setShowResetModal(true); }} className="p-2 text-red-700"><Trash2 size={20} /></button>
+
+        {view === 'inspect' && (
+          <div className="flex flex-col h-full bg-[#F5F5F0]">
+            <div className="bg-white px-6 py-6 shadow-md flex flex-col items-center sticky top-0 z-20 border-b border-gray-100 font-sans">
+              <div className="w-full flex justify-between items-center mb-2">
+                  <button onClick={() => setView('home')} className="p-2 -ml-2 text-[#555]"><X size={24} /></button>
+                  <span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">Checking Room</span>
+                  <div className="w-10"></div>
               </div>
-              <div className="p-6 space-y-4 overflow-y-auto pb-20">
-                {roomsData.map(r => (
-                  <div key={r.id} className="bg-white p-5 rounded-2xl shadow-sm border">
-                    <div className="flex justify-between items-start mb-3">
-                      <div><h3 className="text-2xl font-serif">{String(r.roomId)} 房</h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : '-'}</span></div>
-                      <button onClick={() => { setTargetDeleteId(r.id); setResetMode('single'); setShowResetModal(true); }} className="text-[#DDD] hover:text-red-500"><Trash2 size={16}/></button>
-                    </div>
-                    <div className="text-sm p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666]">
-                      <span>查: {String(r.inspector)}</span>
-                      <span>水: {String(r.waterStaff || '待補')}</span>
-                      <span>床: {String(r.bedStaff || '待補')}</span>
-                    </div>
+              <button 
+                  onClick={() => setShowRoomModal(true)}
+                  className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 transition-all active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}
+              >
+                  <LayoutGrid size={22} className={selectedRoom ? 'text-white' : 'text-gray-400'} />
+                  <span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '房號'}</span>
+                  <ChevronDown size={20} className={selectedRoom ? 'text-white/50' : 'text-gray-400'} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pb-32 p-5 space-y-6">
+              <div className="grid grid-cols-3 gap-3 font-sans">
+                {['inspector', 'water', 'bed'].map(t => (
+                  <div key={t} onClick={() => { setStaffModalTarget(t); setShowStaffModal(true); }} className={`flex flex-col items-center p-3 rounded-xl border cursor-pointer ${inspectorName || (t==='water'?waterStaff:bedStaff) ? 'bg-white border-gray-200 shadow-sm' : 'border-dashed opacity-70'}`}>
+                    <span className="text-[10px] text-[#888] font-bold uppercase tracking-widest mb-1">{t === 'inspector' ? '查房員*' : t === 'water' ? '水組' : '床組'}</span>
+                    <div className="font-bold text-sm truncate w-full text-center">{String(t === 'inspector' ? (inspectorName || '+') : t === 'water' ? (waterStaff || '待定') : (bedStaff || '待定'))}</div>
                   </div>
                 ))}
               </div>
-            </div>
-        )}
-      </div>
-
-      {/* 缺失編輯視窗 */}
-      {showIssueModal && (
-        <div className="fixed inset-0 z-[100] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm">
-          <div className="bg-[#F9F9F9] w-full max-w-md rounded-t-3xl p-6 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center border-b pb-4">
-              <h3 className="font-serif font-bold text-xl">{String(currentIssue.title || '記錄缺失')}</h3>
-              <button onClick={() => setShowIssueModal(false)} className="p-2 bg-white rounded-full"><X size={20}/></button>
-            </div>
-            <div className="flex gap-2">
-                {Object.entries(ERROR_GRADES).map(([k, v]) => (
-                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-4 rounded-xl border flex flex-col items-center gap-1 ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}>
-                    <span className="text-xs font-bold">{String(v.label)}</span>
-                  </button>
+              <div className="bg-white p-1 rounded-2xl shadow-sm border flex font-sans">
+                {Object.values(TEAMS_INFO).map(t => (
+                  <button key={t.id} onClick={() => setActiveTab(t.id.toLowerCase())} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${activeTab === t.id.toLowerCase() ? t.color : 'text-[#999]'}`}>{t.icon}<span>{String(t.name)}</span></button>
                 ))}
+              </div>
+              <div className="font-sans">
+                <h3 className="font-serif font-bold text-[#444] text-sm tracking-widest mb-3 uppercase">Inspection Items</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {TEAMS_INFO[activeTab.toUpperCase()].issues.map((issue, idx) => (
+                    <button key={idx} onClick={() => { setCurrentIssue({ team: activeTab, title: issue.label, grade: issue.grade, note: '', photo: null, isCustom: false }); setShowIssueModal(true); }} className={`p-4 rounded-xl border text-left bg-white shadow-sm hover:shadow-md transition-all ${issue.color} border-transparent active:scale-95`}>
+                      <div className="font-bold text-lg mb-1">{String(issue.label)}</div>
+                      <div className="flex justify-between items-end">
+                          <span className="text-sm text-[#666] leading-tight w-2/3">{String(issue.desc)}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${ERROR_GRADES[issue.grade]?.badge || 'bg-white/80'}`}>{String(issue.grade)}</span>
+                      </div>
+                    </button>
+                  ))}
+                  <button onClick={() => { setCurrentIssue({ team: activeTab, title: '', grade: 'C', note: '', photo: null, isCustom: true }); setShowIssueModal(true); }} className="p-4 rounded-xl border-2 border-dashed border-[#DDD] flex flex-col items-center justify-center text-[#999] active:scale-95 transition-transform"><Plus size={24} /><span className="text-sm font-bold mt-1">自定義缺失</span></button>
+                </div>
+              </div>
             </div>
-            <textarea className="w-full p-4 bg-white border rounded-xl text-sm h-32 focus:ring-2 focus:ring-[#8B5E3C] outline-none" placeholder="詳細描述狀況..." value={String(currentIssue.note)} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} />
-            <button onClick={saveIssue} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-bold tracking-widest active:scale-95 uppercase">確認儲存 Save Issue</button>
+            <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-5 border-t z-30 font-sans"><button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 tracking-widest active:scale-95"><Save size={20} />提交紀錄</button></div>
           </div>
-        </div>
-      )}
-      
-      {/* 重置與刪除視窗 (密碼 5656) */}
-      {showResetModal && (
-        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-xs rounded-2xl p-6 text-center space-y-4">
-            <h3 className="font-bold text-lg">{resetMode === 'all' ? '重置數據' : '刪除紀錄'}</h3>
-            <input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)} className="w-full border-b-2 border-black p-2 text-center text-xl tracking-widest focus:outline-none" placeholder="密碼" />
-            <div className="flex gap-2">
-              <button onClick={() => { setShowResetModal(false); setResetPwd(''); }} className="flex-1 py-3 text-[#666]">取消</button>
-              <button onClick={executeDelete} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold">確認</button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* 人員選擇器 */}
-      {showStaffModal && (
-        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm">
-          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-5 border-b flex justify-between items-center">
-              <h3 className="font-bold">選擇人員</h3>
-              <button onClick={() => setShowStaffModal(false)} className="p-2"><X size={24}/></button>
+        {view === 'history' && (
+          <div className="flex flex-col h-full bg-[#F5F5F0]">
+            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10">
+              <div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">歷史紀錄</h2></div>
+              <button onClick={() => { setResetMode('all'); setShowResetModal(true); }} className="p-2 text-red-700 bg-red-50 rounded-full active:bg-red-200"><Trash2 size={20} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">
-              {INITIAL_STAFF.filter(n => n.includes(staffSearch)).map(n => (
-                <button key={n} onClick={() => selectStaff(n)} className="py-4 px-4 bg-white rounded-xl text-sm font-bold shadow-sm active:scale-95 border hover:border-black">
-                  {String(n)}
-                </button>
+            <div className="p-6 space-y-4 overflow-y-auto pb-20 font-sans">
+              {roomsData.map(r => (
+                <div key={r.id} className="bg-white p-5 rounded-2xl shadow-sm border relative active:scale-[0.98] transition-all">
+                  <div className="absolute top-5 right-5 flex gap-2"><button onClick={(e) => { e.stopPropagation(); setTargetDeleteId(r.id); setResetMode('single'); setShowResetModal(true); }} className="p-2 text-[#DDD] hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div>
+                  <div onClick={() => setSelectedHistoryItem(r)} className="cursor-pointer">
+                      <div className="flex justify-between items-start mb-3 pr-8 font-sans">
+                        <div><h3 className="text-2xl font-serif">{String(r.roomId)} <span className="text-sm text-[#888]">房</span></h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : '-'}</span></div>
+                        {r.hasGradeA ? <span className="bg-red-50 text-red-800 text-[10px] font-bold px-2 py-1 rounded border border-red-200 uppercase text-center min-w-[70px]">A級異常</span> : <span className="bg-green-50 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200 uppercase text-center min-w-[70px]">PASS</span>}
+                      </div>
+                  </div>
+                  <div className="text-sm p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1 font-sans">
+                    <span className="font-medium whitespace-nowrap">查: {String(r.inspector)}</span>
+                    <div className="h-4 w-[1px] bg-[#DDD]"></div>
+                    <button onClick={() => openHistoryStaffEdit(r.id, 'water')} className={`flex-1 py-1 px-1 rounded-md text-center transition-all active:scale-95 text-xs font-bold ${r.waterStaff ? 'text-[#4A6C6F] bg-white border border-[#4A6C6F]/20' : 'text-indigo-600 bg-indigo-50 border border-indigo-200'}`}>水: {String(r.waterStaff || '補填')}</button>
+                    <div className="h-4 w-[1px] bg-[#DDD]"></div>
+                    <button onClick={() => openHistoryStaffEdit(r.id, 'bed')} className={`flex-1 py-1 px-1 rounded-md text-center transition-all active:scale-95 text-xs font-bold ${r.bedStaff ? 'text-[#8B5E3C] bg-white border border-[#8B5E3C]/20' : 'text-indigo-600 bg-indigo-50 border border-indigo-200'}`}>床: {String(r.bedStaff || '補填')}</button>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
+        )}
+
+        {view === 'analytics' && (
+          <div className="flex flex-col h-full bg-[#F5F5F0]">
+            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10">
+                <div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">數據統計</h2></div>
+                <button onClick={handleExportCSV} className="flex items-center gap-1 px-4 py-2 bg-[#EBF2F2] text-[#4A6C6F] rounded-lg text-xs font-bold border"><Download size={14} /> 匯出 CSV</button>
+            </div>
+            <div className="p-6 space-y-6 overflow-y-auto pb-20 font-sans">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+                        <p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> 本月檢查</p>
+                        <p className="text-4xl font-serif mt-2 font-bold text-[#2C2C2C]">{monthlyCount}</p>
+                    </div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+                        <p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><AlertTriangle size={12}/> 缺失總計</p>
+                        <p className="text-4xl font-serif text-[#8B3A3A] mt-2 font-bold">{totalIssues}</p>
+                    </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-serif font-bold text-lg text-[#2C2C2C] tracking-widest flex items-center gap-2"><BarChart2 size={20} className="text-[#8B5E3C]" /> 本月缺失排行</h3>
+                    </div>
+                    <div className="space-y-5">
+                        {topIssues.length > 0 ? topIssues.map(([t, c], i) => (
+                            <div key={t} className="flex justify-between items-center font-sans">
+                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                    <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-[#8B3A3A] text-white shadow-sm' : 'bg-gray-100 text-gray-400'}`}>
+                                        {i + 1}
+                                    </div>
+                                    <span className="font-medium text-sm text-[#444] truncate">{String(t)}</span>
+                                </div>
+                                <span className="font-bold text-sm text-[#2C2C2C]">{c} 次</span>
+                            </div>
+                        )) : (
+                            <div className="text-center py-10 text-gray-300 flex flex-col items-center gap-2">
+                                <CheckCircle size={32} className="opacity-20" />
+                                <p className="text-xs font-bold tracking-widest">目前尚無缺失紀錄</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 房號矩陣選擇器 */}
+      {showRoomModal && (
+        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 h-[80vh] flex flex-col overflow-hidden font-sans">
+            <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-serif font-bold tracking-widest">請選擇房號</h3></div><button onClick={() => setShowRoomModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
+            <div className="flex-1 overflow-y-auto space-y-8 pb-10">
+                {FLOORS_DATA.map(f => (
+                    <div key={f.floor}>
+                        <div className="flex items-center gap-3 mb-4 sticky top-0 bg-white py-1 z-10"><span className="bg-[#2C2C2C] text-white text-xs font-bold px-3 py-1 rounded-full font-sans">{f.floor}F</span><div className="h-[1px] flex-1 bg-gray-100"></div></div>
+                        <div className="grid grid-cols-4 gap-3">
+                            {f.rooms.map(r => {
+                                const isDone = roomsData.some(d => d.roomId === r);
+                                return (<button key={r} onClick={() => { setSelectedRoom(r); setShowRoomModal(false); }} className={`relative py-4 rounded-xl text-lg font-serif font-bold transition-all ${selectedRoom === r ? 'bg-[#2C2C2C] text-white shadow-lg' : 'bg-gray-50 text-gray-600 border border-gray-100'}`}>{r}{isDone && <div className="absolute top-1 right-1"><CheckCircle size={12} className="text-[#2F855A]" /></div>}</button>);
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* 缺失編輯視窗 */}
+      {showIssueModal && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm font-sans">
+          <div className="bg-[#F9F9F9] w-full max-w-md rounded-t-3xl p-6 space-y-6 shadow-2xl animate-in slide-in-from-bottom-10">
+            <div className="flex justify-between items-center border-b pb-4"><h3 className="font-serif font-bold text-xl">{String(currentIssue.title || '記錄缺失')}</h3><button onClick={() => setShowIssueModal(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20}/></button></div>
+            {currentIssue.isCustom && <input className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-[#2C2C2C] focus:ring-2 outline-none" placeholder="輸入缺失名稱..." value={String(currentIssue.title)} onChange={e => setCurrentIssue({...currentIssue, title: e.target.value})} />}
+            <div>
+              <div className="flex gap-2">
+                {Object.entries(ERROR_GRADES).map(([k, v]) => (
+                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}><span className="text-xs font-bold">{String(v.label)}</span><span className="text-[8px] font-medium opacity-70 uppercase tracking-tighter">{v.subLabel}</span></button>
+                ))}
+              </div>
+            </div>
+            <div className="relative"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 outline-none resize-none" placeholder="描述狀況..." value={String(currentIssue.note)} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
+            <div className="flex gap-2">
+              <label className="flex-1 bg-white border-2 border-dashed border-[#DDD] rounded-xl py-4 flex flex-col items-center justify-center cursor-pointer h-24 overflow-hidden relative">
+                {currentIssue.photo ? <img src={currentIssue.photo} className="h-full w-full object-cover" /> : <div className="flex flex-col items-center"><Camera className="text-[#AAA]" size={20}/><span className="text-[9px] font-bold text-[#AAA] mt-1 uppercase">拍照/上傳</span></div>}
+                {!currentIssue.photo && <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const file = e.target.files[0]; if(file) { const compressed = await compressImage(file); setCurrentIssue({...currentIssue, photo: compressed}); } }} />}
+              </label>
+              <button onClick={saveIssue} className="flex-[2] bg-[#2C2C2C] text-white py-4 rounded-xl font-bold tracking-widest shadow-lg">確認儲存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showResetModal && (
+        <div className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
+          <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-2xl text-center space-y-4">
+            <div className="bg-red-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-red-600"><Lock size={24} /></div>
+            <h3 className="font-bold text-lg">{resetMode === 'all' ? '數據重置' : '刪除紀錄'}</h3>
+            <input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)} className="w-full border-b-2 border-[#2C2C2C] p-2 text-center text-xl focus:outline-none font-mono" placeholder="••••" />
+            <div className="flex gap-2"><button onClick={() => { setShowResetModal(false); setResetPwd(''); setTargetDeleteId(null); }} className="flex-1 py-3 text-[#666] font-bold text-sm">取消</button><button onClick={executeDelete} className="flex-1 py-3 bg-[#8B3A3A] text-white rounded-xl font-bold text-sm shadow-md active:scale-95">確認執行</button></div>
+          </div>
+        </div>
+      )}
+
+      {showStaffModal && (
+        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
+          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-5 border-b flex justify-between items-center bg-white"><h3 className="font-bold tracking-widest">{historyEditTarget ? '修正人員' : '選擇人員'}</h3><button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null);}} className="p-2"><X size={24}/></button></div>
+            <div className="p-4 flex gap-2 bg-white border-b border-gray-50"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-colors ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0] text-[#555]'}`}><Edit2 size={18}/></button></div>
+            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">{INITIAL_STAFF.filter(n => n.includes(staffSearch)).map(n => (<button key={n} onClick={() => selectStaff(n)} className="py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm active:scale-95 transition-all border border-transparent hover:border-indigo-200">{String(n)}</button>))}</div>
+          </div>
+        </div>
+      )}
+
+      {selectedHistoryItem && (
+        <div className="fixed inset-0 z-[150] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm">
+          <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl animate-in slide-in-from-bottom-10 overflow-hidden font-sans">
+            <div className="p-5 border-b bg-white flex justify-between items-center shadow-sm font-serif"><h3 className="font-bold text-xl">{String(selectedHistoryItem.roomId)} 房 詳情</h3><button onClick={() => setSelectedHistoryItem(null)} className="p-2 bg-[#F0F0F0] rounded-full"><X size={20}/></button></div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
+               {selectedHistoryItem.issues?.length > 0 ? selectedHistoryItem.issues.map((i, idx) => (
+                 <div key={idx} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm ${TEAMS_INFO[i.team?.toUpperCase() || 'BED'].borderColor}`}>
+                    <div className="flex justify-between items-start mb-2"><div><span className={`text-[9px] font-bold uppercase mb-1 block ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C]">{String(i.title)}</h4></div><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${(ERROR_GRADES[i.grade] || ERROR_GRADES['C']).color}`}>{String(i.grade)}級</span></div>
+                    <p className="text-sm text-[#666] mb-3 bg-[#F9F9F9] p-2 rounded">{String(i.note || "無補充說明")}</p>
+                    {i.photo && <div className="rounded-lg overflow-hidden border border-gray-100"><img src={i.photo} className="w-full h-auto" onClick={() => setPreviewImage(i.photo)} /></div>}
+                 </div>
+               )) : <div className="text-center py-20 text-[#CCC] font-bold tracking-widest flex flex-col items-center gap-3"><CheckCircle size={48} className="opacity-20"/><p>無缺失紀錄 (PASS)</p></div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewImage && (
+        <div className="fixed inset-0 z-[250] bg-black flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}><img src={previewImage} className="max-w-full max-h-full object-contain shadow-2xl" /><button className="absolute top-4 right-4 text-white p-2 bg-black/50 rounded-full shadow-lg"><X size={24}/></button></div>
       )}
     </div>
   );
