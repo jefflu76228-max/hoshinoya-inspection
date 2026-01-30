@@ -14,14 +14,14 @@ import {
   MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, Grid
 } from 'lucide-react';
 
-// --- Firebase 初始設定 (已修正為讀取 Vercel 環境變數) ---
+// --- Firebase Config (Vercel 環境變數) ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'hoshinoya-inspection-production'; // 固定 ID 確保資料庫路徑穩定
+const appId = 'hoshinoya-guguan-production-v2';
 
-// --- Gemini API 輔助函式 ---
+// --- Gemini API ---
 const callGemini = async (prompt, isJson = false) => {
   const apiKey = import.meta.env.VITE_GEMINI_KEY; 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
@@ -37,38 +37,31 @@ const callGemini = async (prompt, isJson = false) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!response.ok) throw new Error(`API 錯誤: ${response.status}`);
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
     const data = await response.json();
     return data.candidates?.[0]?.content?.parts?.[0]?.text;
   } catch (error) {
-    console.error("Gemini API 錯誤:", error);
+    console.error("Gemini API Error:", error);
     return null;
   }
 };
 
-// --- 子元件 ---
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center p-8 min-h-screen bg-[#F5F5F0]">
-    <div className="flex flex-col items-center gap-4 font-sans">
+    <div className="flex flex-col items-center gap-4">
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#2C2C2C]"></div>
       <p className="text-[#555] tracking-widest text-xs font-serif">載入中...</p>
     </div>
   </div>
 );
 
-// --- 房號配置 ---
+// --- Data Constants ---
 const FLOORS_DATA = [
   { floor: 2, rooms: ["201", "202", "203", "204", "205", "206", "207", "208", "209", "210", "211", "212", "213"] },
   { floor: 3, rooms: ["301", "302", "303", "304", "305", "306", "307", "308", "309", "310", "311", "312", "313"] },
   { floor: 4, rooms: ["401", "402", "403", "405", "406", "407", "408", "409", "410", "411", "412"] },
   { floor: 5, rooms: ["501", "502", "503", "504", "505", "506", "507", "508", "509", "510", "511", "512", "513"] },
 ];
-
-const ROOM_LIST = (() => {
-  const rooms = [];
-  FLOORS_DATA.forEach(f => { f.rooms.forEach(r => rooms.push(r)); });
-  return rooms;
-})();
 
 const INITIAL_STAFF = [
   "王 佩貞", "何 欣怡", "何 渝沁", "吳 怡錚", "吳 至真", "吳 莉琦", "吳 瑞元", "宋 任翔", 
@@ -219,7 +212,7 @@ export default function App() {
     if (!currentIssue.note) return;
     setIsAiLoading(true);
     try {
-      const prompt = `你是虹夕諾雅谷關房務員。改寫描述：${currentIssue.note}。JSON格式: { "title": "缺失標題", "note": "專業描述", "grade": "A"|"B"|"C" }`;
+      const prompt = `你是房務檢查員。改寫：${currentIssue.note}。回傳JSON: { "title": "...", "note": "...", "grade": "A"|"B"|"C" }`;
       const txt = await callGemini(prompt, true);
       if (txt) {
         const res = JSON.parse(txt);
@@ -295,11 +288,11 @@ export default function App() {
     });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob(["\uFEFF" + [headers.join(","), ...csvRows.map(r => r.join(","))].join("\n")], { type: "text/csv;charset=utf-8;" }));
-    link.download = `Hoshinoya_Inspection_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `Hoshinoya_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
   };
 
-  // --- Auth & Data ---
+  // --- Auth ---
   useEffect(() => {
     signInAnonymously(auth);
     const saved = localStorage.getItem('lastInspector');
@@ -337,7 +330,7 @@ export default function App() {
             </div>
             <div className="flex-1 px-6 py-8 space-y-5 -mt-6 font-sans">
               <button onClick={() => setView('inspect')} className="w-full bg-white p-6 rounded-2xl shadow-xl border border-white/50 flex items-center justify-between active:scale-95 transition-all">
-                <div className="flex items-center gap-5"><div className="bg-[#2C2C2C] text-white p-4 rounded-full"><CheckCircle size={28} /></div><div className="text-left font-sans"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1">Start Inspection</p></div></div><ChevronRight size={20} className="text-[#CCC]" />
+                <div className="flex items-center gap-5"><div className="bg-[#2C2C2C] text-white p-4 rounded-full"><CheckCircle size={28} /></div><div className="text-left"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1">Start Inspection</p></div></div><ChevronRight size={20} className="text-[#CCC]" />
               </button>
               <div className="grid grid-cols-2 gap-4">
                 <button onClick={() => setView('history')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#EBF2F2] p-3 rounded-full text-[#4A6C6F]"><History size={24} /></div><span className="text-sm font-medium tracking-widest">歷史紀錄</span></button>
@@ -396,9 +389,9 @@ export default function App() {
                   <div className="text-xs p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1 font-sans">
                     <span className="font-medium whitespace-nowrap">查: {r.inspector}</span>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={() => openHistoryStaffEdit(r.id, 'water')} className="flex-1 py-1 text-indigo-600 font-bold">水: {r.waterStaff || '補填'}</button>
+                    <button onClick={() => openHistoryStaffEdit(r.id, 'water')} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">水: {r.waterStaff || '補填'}</button>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={() => openHistoryStaffEdit(r.id, 'bed')} className="flex-1 py-1 text-indigo-600 font-bold">床: {r.bedStaff || '補填'}</button>
+                    <button onClick={() => openHistoryStaffEdit(r.id, 'bed')} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">床: {r.bedStaff || '補填'}</button>
                   </div>
                   {(r.issues || []).length > 0 && <div className="mt-2 flex flex-wrap gap-1 font-sans">{r.issues.slice(0, 3).map((i, idx) => <span key={idx} className="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-[#888]">{i.title}</span>)}{r.issues.length > 3 && <span className="text-[9px] text-[#BBB]">+{r.issues.length - 3}</span>}</div>}
                 </div>
@@ -413,8 +406,8 @@ export default function App() {
             <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10"><div className="flex items-center font-serif"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-bold text-xl ml-3">數據統計</h2></div><button onClick={handleExportCSV} className="flex items-center gap-1 px-4 py-2 bg-[#EBF2F2] text-[#4A6C6F] rounded-lg text-xs font-bold border font-sans"><Download size={14} /> CSV</button></div>
             <div className="p-6 space-y-6 overflow-y-auto pb-20 font-sans">
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> 本月檢查</p><p className="text-4xl font-serif mt-2 font-bold text-[#2C2C2C]">{stats.count}</p></div>
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><AlertTriangle size={12}/> 缺失總計</p><p className="text-4xl font-serif text-[#8B3A3A] mt-2 font-bold">{stats.total}</p></div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> 本月檢查</p><p className="text-4xl font-serif mt-2 font-bold text-[#2C2C2C]">{stats.count}</p></div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><AlertTriangle size={12}/> 缺失總計</p><p className="text-4xl font-serif text-[#8B3A3A] mt-2 font-bold">{stats.total}</p></div>
                 </div>
                 <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <h3 className="font-serif font-bold text-lg mb-5 flex items-center gap-2"><BarChart2 size={20} className="text-[#8B5E3C]" /> 本月缺失排行</h3>
@@ -422,7 +415,6 @@ export default function App() {
                         {stats.tops.map(([t, c], i) => (
                             <div key={t} className="flex justify-between items-center font-sans"><div className="flex items-center gap-4 flex-1 min-w-0"><div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-[#8B3A3A] text-white shadow-sm' : 'bg-gray-100 text-gray-400'}`}>{i + 1}</div><span className="font-medium text-sm text-[#444] truncate">{t}</span></div><span className="font-bold text-sm text-[#2C2C2C]">{c} 次</span></div>
                         ))}
-                        {stats.tops.length === 0 && <p className="text-center text-gray-300 text-sm font-sans">尚無統計數據</p>}
                     </div>
                 </div>
             </div>
@@ -430,8 +422,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Modals --- Modals 放在主容器底層 --- */}
-
+      {/* Modals */}
       {showRoomModal && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl h-[80vh] flex flex-col overflow-hidden font-sans">
@@ -470,7 +461,7 @@ export default function App() {
                 {COMMON_TAGS.map(t => (<button key={t} onClick={() => handleTagClick(t)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-[#555] active:bg-[#F5F5F0] transition-colors">{t}</button>))}
               </div>
             )}
-            <div className="relative font-sans"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 outline-none resize-none" placeholder="詳細描述..." value={currentIssue.note} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg active:scale-95">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
+            <div className="relative font-sans"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 outline-none resize-none" placeholder="描述狀況..." value={currentIssue.note} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg active:scale-95">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
             <div className="flex gap-2 font-sans">
               <label className="flex-1 bg-white border-2 border-dashed border-[#DDD] rounded-xl py-4 flex flex-col items-center justify-center cursor-pointer h-24 overflow-hidden relative active:bg-gray-50 transition-colors">
                 {currentIssue.photo ? <img src={currentIssue.photo} className="h-full w-full object-cover" onClick={async (e) => { e.preventDefault(); const rect = e.target.getBoundingClientRect(); const x = (e.clientX - rect.left) * (720/rect.width); const y = (e.clientY - rect.top) * (720/rect.width); const newPhoto = await drawCircleOnImage(currentIssue.photo, x, y); setCurrentIssue({...currentIssue, photo: newPhoto}); }} /> : <div className="flex flex-col items-center"><Camera className="text-[#AAA]" size={20}/><span className="text-[9px] font-bold text-[#AAA] mt-1 text-center tracking-tighter">拍照/上傳</span></div>}
@@ -488,14 +479,14 @@ export default function App() {
             <div className="bg-red-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-red-600"><Lock size={24} /></div>
             <h3 className="font-bold text-lg">{resetMode === 'all' ? '數據重置' : '刪除紀錄'}</h3>
             <input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)} className="w-full border-b-2 border-[#2C2C2C] p-2 text-center text-xl focus:outline-none font-mono" placeholder="••••" />
-            <div className="flex gap-2"><button onClick={() => { setShowResetModal(false); setResetPwd(''); }} className="flex-1 py-3 text-[#666] font-bold text-sm">取消</button><button onClick={executeDelete} className="flex-1 py-3 bg-[#8B3A3A] text-white rounded-xl font-bold text-sm active:scale-95">確認</button></div>
+            <div className="flex gap-2"><button onClick={() => { setShowResetModal(false); setResetPwd(''); setTargetDeleteId(null); }} className="flex-1 py-3 text-[#666] font-bold text-sm">取消</button><button onClick={executeDelete} className="flex-1 py-3 bg-[#8B3A3A] text-white rounded-xl font-bold text-sm shadow-md active:scale-95">確認執行</button></div>
           </div>
         </div>
       )}
 
       {showStaffModal && (
         <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
-          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
             <div className="p-5 border-b flex justify-between items-center bg-white font-serif"><h3 className="font-bold tracking-widest">{historyEditTarget ? '修正人員' : '選擇人員'}</h3><button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null);}} className="p-2"><X size={24}/></button></div>
             <div className="p-4 flex gap-2 bg-white"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm font-sans" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-all ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0]'}`}><Edit2 size={18}/></button></div>
             {isEditMode && (<div className="px-4 py-4 flex gap-2 animate-in slide-in-from-top-2 bg-white"><input className="flex-1 border border-gray-200 p-3 rounded-xl text-sm font-sans" placeholder="新增姓名..." value={newStaffName} onChange={e => setNewStaffName(e.target.value)} /><button onClick={async () => { if (!newStaffName.trim()) return; const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list'); await updateDoc(docRef, { bed: arrayUnion(newStaffName.trim()), water: arrayUnion(newStaffName.trim()) }); setNewStaffName(''); }} className="bg-black text-white px-4 rounded-xl text-xs font-bold uppercase font-sans">ADD</button></div>)}
@@ -506,7 +497,7 @@ export default function App() {
 
       {selectedHistoryItem && (
         <div className="fixed inset-0 z-[150] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm font-sans">
-          <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
             <div className="p-5 border-b bg-white flex justify-between items-center shadow-sm font-serif"><h3 className="font-bold text-xl">{selectedHistoryItem.roomId} 房 詳情</h3><button onClick={() => setSelectedHistoryItem(null)} className="p-2 bg-[#F0F0F0] rounded-full"><X size={20}/></button></div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50 font-sans">
                {(selectedHistoryItem.issues || []).map((i, idx) => (
