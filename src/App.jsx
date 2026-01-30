@@ -14,17 +14,17 @@ import {
   MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, LayoutGrid
 } from 'lucide-react';
 
-// --- Firebase 初始設定 (已修正為 Vercel 專用讀取方式) ---
-const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+// --- Firebase 初始設定 ---
+const firebaseConfig = JSON.parse(__firebase_config);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'hoshinoya-inspection-main';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// --- Gemini API 輔助函式 (已修正為 Vercel 專用讀取方式) ---
+// --- Gemini API 輔助函式 ---
 const callGemini = async (prompt, isJson = false) => {
-  const apiKey = import.meta.env.VITE_GEMINI_KEY; 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+  const apiKey = ""; 
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
   
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -56,18 +56,20 @@ const LoadingSpinner = () => (
   </div>
 );
 
-// --- 房號配置 ---
+// --- 房號配置 (4F 移除 404) ---
 const FLOORS_DATA = [
   { floor: 2, rooms: ["201", "202", "203", "204", "205", "206", "207", "208", "209", "210", "211", "212", "213"] },
   { floor: 3, rooms: ["301", "302", "303", "304", "305", "306", "307", "308", "309", "310", "311", "312", "313"] },
-  { floor: 4, rooms: ["401", "402", "403", "405", "406", "407", "408", "409", "410", "411", "412"] },
+  { floor: 4, rooms: ["401", "402", "403", "405", "406", "407", "408", "409", "410", "411", "412"] }, // Removed 404
   { floor: 5, rooms: ["501", "502", "503", "504", "505", "506", "507", "508", "509", "510", "511", "512", "513"] },
 ];
 
 const ROOM_LIST = (() => {
   const rooms = [];
   FLOORS_DATA.forEach(f => {
-    f.rooms.forEach(r => rooms.push(r));
+    f.rooms.forEach(r => {
+       rooms.push(r);
+    });
   });
   return rooms;
 })();
@@ -87,18 +89,29 @@ const INITIAL_STAFF = [
   "羅 敏瑄", "蘇 子晴", "錡 承恩", "薇度 莎比", "江 家莉", "彭 馨嫻"
 ].sort((a, b) => a.localeCompare(b, 'zh-TW'));
 
-const COMMON_TAGS = ["毛髮", "灰塵", "水漬", "指紋", "垃圾", "破損", "異味", "雜音", "未補", "未歸位", "皺摺", "過期", "歪斜", "皂垢", "生鏽"];
+// --- 常用懶人標籤 (Lazy Typing Tags) ---
+const COMMON_TAGS = [
+  "毛髮", "灰塵", "水漬", "指紋", "垃圾", 
+  "破損", "異味", "雜音", "未補", "未歸位",
+  "皺摺", "過期", "歪斜", "皂垢", "生鏽"
+];
 
+// --- UPDATED LOGIC: Removed specific score deduction text ---
 const QUICK_ISSUES = {
   BED: [
+    // GRADE A
     { label: '遺留物/垃圾', grade: 'A', desc: '含自身用品/衣物/垃圾', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '毛髮/碎屑/蟲屍', grade: 'A', desc: '地板/抽屜明顯可見', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '備品未補/全空', grade: 'A', desc: '器皿/拖鞋/水全空', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '冰箱/器皿髒污', grade: 'A', desc: '內部污漬/杯具有水痕', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '陽台/戶外區髒污', grade: 'A', desc: '家具/地板/欄杆髒', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '鋪床污漬/破損', grade: 'A', desc: '床單/被套有髒污', color: 'border-red-900/20 bg-red-50 text-red-900' },
+
+    // GRADE B
     { label: '備品過期', grade: 'B', desc: '食品/飲料過期', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
     { label: '高處/死角灰塵', grade: 'B', desc: '樓梯/檻燈/角落積塵', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
+    
+    // GRADE C
     { label: '鋪床不美觀/皺摺', grade: 'C', desc: '大於A5紙皺摺/不平', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
     { label: '衣架/保險箱失誤', grade: 'C', desc: '數量不對/收納錯誤', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
     { label: '枕頭/抱枕擺放', grade: 'C', desc: '方向錯誤/凌亂', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
@@ -106,6 +119,7 @@ const QUICK_ISSUES = {
     { label: '衛生紙/備品微調', grade: 'C', desc: '無三角形/未補滿', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
   ],
   WATER: [
+    // GRADE A
     { label: '熱水壺/杯盤髒污', grade: 'A', desc: '水漬/茶垢/破損', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '馬桶汙垢/尿漬', grade: 'A', desc: '未清潔乾淨', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '浴池青苔/髒汙', grade: 'A', desc: '內部/溢流區未刷', color: 'border-red-900/20 bg-red-50 text-red-900' },
@@ -113,9 +127,13 @@ const QUICK_ISSUES = {
     { label: '鏡面/玻璃水痕', grade: 'A', desc: '光照有明顯痕跡', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '地板濕滑/積水', grade: 'A', desc: '未擦乾', color: 'border-red-900/20 bg-red-50 text-red-900' },
     { label: '垃圾桶未清', grade: 'A', desc: '生理桶/垃圾桶有垃圾', color: 'border-red-900/20 bg-red-50 text-red-900' },
+
+    // GRADE B
     { label: '嚴重水垢堆積', grade: 'B', desc: '溢流牆/出水口', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
     { label: '溫泉水質/溫度', grade: 'B', desc: '雜質/過高過低', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
     { label: '高處/死角蜘蛛網', grade: 'B', desc: '九宮格窗/天花板', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
+
+    // GRADE C
     { label: '備品補充/復歸', grade: 'C', desc: '捲筒紙/毛巾摺法', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
     { label: '五金水垢/皂垢', grade: 'C', desc: '水龍頭/洗手乳瓶底', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
     { label: '設備歸位微調', grade: 'C', desc: '蓮蓬頭/木桶/水塞', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
@@ -123,17 +141,53 @@ const QUICK_ISSUES = {
 };
 
 const TEAMS_INFO = {
-  WATER: { id: 'water', name: '水組', icon: <Droplets className="w-5 h-5" />, color: 'bg-[#4A6C6F] text-white', borderColor: 'border-[#4A6C6F]', issues: QUICK_ISSUES.WATER },
-  BED: { id: 'bed', name: '床組', icon: <Bed className="w-5 h-5" />, color: 'bg-[#8B5E3C] text-white', borderColor: 'border-[#8B5E3C]', issues: QUICK_ISSUES.BED }
+  WATER: {
+    id: 'water',
+    name: '水組',
+    icon: <Droplets className="w-5 h-5" />,
+    color: 'bg-[#4A6C6F] text-white shadow-lg shadow-[#4A6C6F]/30',
+    activeBg: 'bg-[#4A6C6F]',
+    lightColor: 'bg-[#EBF2F2] text-[#2C4A4D]',
+    borderColor: 'border-[#4A6C6F]',
+    issues: QUICK_ISSUES.WATER
+  },
+  BED: {
+    id: 'bed',
+    name: '床組',
+    icon: <Bed className="w-5 h-5" />,
+    color: 'bg-[#8B5E3C] text-white shadow-lg shadow-[#8B5E3C]/30',
+    activeBg: 'bg-[#8B5E3C]',
+    lightColor: 'bg-[#F5F0EB] text-[#5A3A29]',
+    borderColor: 'border-[#8B5E3C]',
+    issues: QUICK_ISSUES.BED
+  }
 };
 
 const ERROR_GRADES = {
-  A: { label: 'A級 (嚴重)', subLabel: '客訴風險', color: 'bg-[#8B3A3A] text-white', badge: 'bg-red-100 text-red-800' },
-  B: { label: 'B級 (中等)', subLabel: '品質缺失', color: 'bg-[#D97706] text-white', badge: 'bg-orange-100 text-orange-800' },
-  C: { label: 'C級 (輕微)', subLabel: '細節微調', color: 'bg-[#B45309] text-white', badge: 'bg-yellow-100 text-yellow-800' },
+  A: { 
+    label: 'A級 (嚴重)', 
+    subLabel: '不通過 / 客訴風險',
+    icon: <AlertOctagon size={20}/>, 
+    color: 'bg-[#8B3A3A] text-white border-none shadow-md shadow-red-900/30',
+    badge: 'bg-red-100 text-red-800 border-red-200'
+  },
+  B: { 
+    label: 'B級 (中等)', 
+    subLabel: '品質缺失',
+    icon: <AlertTriangle size={20}/>, 
+    color: 'bg-[#D97706] text-white border-none shadow-md shadow-orange-900/30',
+    badge: 'bg-orange-100 text-orange-800 border-orange-200'
+  },
+  C: { 
+    label: 'C級 (輕微)', 
+    subLabel: '細節微調',
+    icon: <Info size={20}/>, 
+    color: 'bg-[#B45309] text-white border-none shadow-md shadow-yellow-900/30',
+    badge: 'bg-yellow-100 text-yellow-800 border-yellow-200'
+  },
 };
 
-// --- 圖片輔助函式 ---
+// --- 圖片壓縮函式 ---
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -144,9 +198,16 @@ const compressImage = (file) => {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const MAX_WIDTH = 720; 
-        let width = img.width, height = img.height;
-        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-        canvas.width = width; canvas.height = height;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL('image/webp', 0.5)); 
@@ -161,11 +222,15 @@ const drawCircleOnImage = (imageSrc, x, y) => {
     img.src = imageSrc;
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = img.width; canvas.height = img.height;
+      canvas.width = img.width;
+      canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
-      ctx.beginPath(); ctx.arc(x, y, 50, 0, 2 * Math.PI);
-      ctx.lineWidth = 8; ctx.strokeStyle = '#EF4444'; ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, 50, 0, 2 * Math.PI);
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = '#EF4444'; 
+      ctx.stroke();
       resolve(canvas.toDataURL('image/webp', 0.5));
     };
   });
@@ -202,14 +267,29 @@ export default function App() {
   const [staffSearch, setStaffSearch] = useState('');
   const [isEditMode, setIsEditMode] = useState(false); 
   const [newStaffName, setNewStaffName] = useState('');
+  const [staffLists, setStaffLists] = useState({ bed: INITIAL_STAFF, water: INITIAL_STAFF });
   const [historyEditTarget, setHistoryEditTarget] = useState(null);
 
   const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // --- Handlers ---
+  // --- 函數定義 ---
+  function saveIssue() {
+    if (!currentIssue.title) {
+        alert("請輸入缺失內容");
+        return;
+    }
+    setIssues([...issues, { ...currentIssue, id: Date.now() }]);
+    setShowIssueModal(false);
+  }
+
+  // 懶人標籤點擊處理
   function handleTagClick(tag) {
     setCurrentIssue(prev => {
-        if (!prev.title) return { ...prev, title: tag };
+        // 如果標題是空的，先填標題
+        if (!prev.title) {
+            return { ...prev, title: tag };
+        }
+        // 如果標題有了，填入備註
         return { ...prev, note: prev.note ? `${prev.note} ${tag}` : tag };
     });
   }
@@ -228,15 +308,46 @@ export default function App() {
     finally { setIsAiLoading(false); }
   }
 
+  function handleExportCSV() {
+    if (roomsData.length === 0) return;
+    const headers = ["日期", "房號", "查房員", "床組人員", "水組人員", "缺失組別", "缺失項目", "等級", "備註"];
+    const csvRows = [];
+    roomsData.forEach(room => {
+      const date = room.createdAt?.seconds ? new Date(room.createdAt.seconds * 1000).toLocaleDateString('zh-TW') : '';
+      if (!room.issues || room.issues.length === 0) {
+        csvRows.push([date, room.roomId, room.inspector, room.bedStaff || '待補', room.waterStaff || '待補', "N/A", "無 (PASS)", ""]);
+      } else {
+        room.issues.forEach(issue => {
+          csvRows.push([
+            date, room.roomId, room.inspector, room.bedStaff || '待補', room.waterStaff || '待補',
+            issue.team === 'water' ? "水組" : "床組",
+            issue.title, issue.grade, `"${(issue.note || '').replace(/"/g, '""')}"`
+          ]);
+        });
+      }
+    });
+    const csvContent = "\uFEFF" + [headers.join(","), ...csvRows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `Hoshinoya_Records_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+  }
+
   async function executeDelete() {
     if (resetPwd !== '5656') { alert("密碼錯誤"); return; }
+    
     setLoading(true);
     try {
       if (resetMode === 'all') {
-        const snapshot = await getDocs(query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections')));
-        await Promise.all(snapshot.docs.map(d => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', d.id))));
+        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'));
+        const snapshot = await getDocs(q);
+        const deletePromises = snapshot.docs.map(d => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', d.id)));
+        await Promise.all(deletePromises);
+        alert("數據已清空");
       } else {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', targetDeleteId));
+        alert("紀錄已刪除");
       }
       setShowResetModal(false); setResetPwd(''); setTargetDeleteId(null);
     } catch (e) { alert("操作失敗"); } finally { setLoading(false); }
@@ -251,19 +362,36 @@ export default function App() {
     } else {
       try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'inspections', historyEditTarget.docId);
-        await updateDoc(docRef, { [historyEditTarget.type === 'bed' ? 'bedStaff' : 'waterStaff']: name });
+        const updates = {};
+        if (historyEditTarget.type === 'bed') updates.bedStaff = name;
+        if (historyEditTarget.type === 'water') updates.waterStaff = name;
+        await updateDoc(docRef, updates);
         setHistoryEditTarget(null); setShowStaffModal(false);
       } catch(e) { alert("更新失敗"); }
     }
   }
 
+  function openHistoryStaffEdit(recordId, type) {
+    setHistoryEditTarget({ docId: recordId, type });
+    setStaffModalTarget(type); 
+    setStaffSearch('');
+    setIsEditMode(false);
+    setShowStaffModal(true);
+  }
+
   async function handleSubmitInspection() {
     if (!selectedRoom || !inspectorName) return alert("請填寫房號與查房員");
+    if ((!bedStaff || !waterStaff) && !confirm("人員未選齊，確定提交？")) return;
     const payload = {
-      roomId: String(selectedRoom), inspector: String(inspectorName), 
-      bedStaff: String(bedStaff || ''), waterStaff: String(waterStaff || ''), 
-      issues: issues || [], issueCount: issues.length, hasGradeA: issues.some(i => i.grade === 'A'),
-      createdAt: serverTimestamp(), monthKey: new Date().toISOString().slice(0, 7)
+      roomId: String(selectedRoom), 
+      inspector: String(inspectorName), 
+      bedStaff: String(bedStaff || ''), 
+      waterStaff: String(waterStaff || ''), 
+      issues: issues || [], 
+      issueCount: issues.length, 
+      hasGradeA: issues.some(i => i.grade === 'A'),
+      createdAt: serverTimestamp(),
+      monthKey: new Date().toISOString().slice(0, 7) // 用於本月統計
     };
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'), payload);
@@ -272,31 +400,77 @@ export default function App() {
     } catch (e) { alert("提交失敗"); }
   }
 
-  // --- Auth & Sync ---
+  // --- Auth & 資料監聽 ---
   useEffect(() => {
-    signInAnonymously(auth);
-    const saved = localStorage.getItem('lastInspector');
-    if (saved) setInspectorName(saved);
-    return onAuthStateChanged(auth, (u) => setUser(u));
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    const savedInspector = localStorage.getItem('lastInspector');
+    if (savedInspector) setInspectorName(savedInspector);
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'));
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setRoomsData(data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setRoomsData(data);
+      setLoading(false);
+    }, (err) => {
+      console.error(err);
       setLoading(false);
     });
+    return () => unsubscribe();
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setStaffLists({
+          bed: (data.bed || INITIAL_STAFF).sort((a, b) => a.localeCompare(b, 'zh-TW')),
+          water: (data.water || INITIAL_STAFF).sort((a, b) => a.localeCompare(b, 'zh-TW'))
+        });
+      } else {
+        setDoc(docRef, { bed: INITIAL_STAFF, water: INITIAL_STAFF }).catch(console.error);
+      }
+    }, console.error);
+    return () => unsubscribe();
+  }, [user]);
+
+  // --- 統計過濾邏輯 ---
   const getMonthlyStats = () => {
-    const cur = new Date().toISOString().slice(0, 7);
-    const filtered = roomsData.filter(r => r.monthKey === cur || !r.monthKey);
-    const counts = filtered.flatMap(r => r.issues || []).reduce((acc, i) => { acc[i.title] = (acc[i.title] || 0) + 1; return acc; }, {});
-    return { count: filtered.length, total: filtered.reduce((a, c) => a + (c.issueCount || 0), 0), tops: Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 5) };
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const filtered = roomsData.filter(r => r.monthKey === currentMonth || !r.monthKey);
+    
+    const issueCounts = filtered.flatMap(r => r.issues || []).reduce((acc, curr) => {
+      const title = String(curr.title);
+      if (title) acc[title] = (acc[title] || 0) + 1;
+      return acc;
+    }, {});
+
+    const topIssues = Object.entries(issueCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5);
+
+    return {
+      monthlyCount: filtered.length,
+      totalIssues: filtered.reduce((a, c) => a + (c.issueCount || 0), 0),
+      topIssues
+    };
   };
-  const stats = getMonthlyStats();
+
+  const { monthlyCount, totalIssues, topIssues } = getMonthlyStats();
 
   if (loading) return <LoadingSpinner />;
 
@@ -304,18 +478,22 @@ export default function App() {
     <div className="bg-[#E0E0E0] min-h-screen font-sans text-[#2C2C2C] md:max-w-md md:mx-auto md:shadow-2xl md:relative h-screen overflow-hidden">
       <div className="h-full bg-[#F5F5F0]">
         {view === 'home' && (
-          <div className="flex flex-col h-full">
-            <div className="bg-[#2C2C2C] text-white p-8 pt-14 pb-12 rounded-b-[40px] shadow-2xl text-center">
+          <div className="flex flex-col h-full bg-[#F5F5F0]">
+            <div className="bg-[#2C2C2C] text-white p-8 pt-14 pb-12 rounded-b-[40px] shadow-2xl relative overflow-hidden text-center">
               <h1 className="text-3xl font-serif tracking-[0.2em] mb-1">HOSHINOYA</h1>
-              <p className="text-[#888] text-xs tracking-[0.3em] uppercase">Guguan Housekeeping</p>
+              <p className="text-[#888] text-xs tracking-[0.3em] uppercase font-sans">Guguan Housekeeping</p>
             </div>
             <div className="flex-1 px-6 py-8 space-y-5 -mt-6">
               <button onClick={() => setView('inspect')} className="w-full bg-white p-6 rounded-2xl shadow-xl border border-white/50 flex items-center justify-between active:scale-95 transition-all">
-                <div className="flex items-center gap-5"><div className="bg-[#2C2C2C] text-white p-4 rounded-full"><CheckCircle size={28} /></div><div className="text-left"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1 font-sans">Start Inspection</p></div></div><ChevronRight size={20} className="text-[#CCC]" />
+                <div className="flex items-center gap-5">
+                  <div className="bg-[#2C2C2C] text-white p-4 rounded-full shadow-lg"><CheckCircle size={28} /></div>
+                  <div className="text-left"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1 tracking-widest uppercase font-sans">Start Inspection</p></div>
+                </div>
+                <ChevronRight size={20} className="text-[#CCC]" />
               </button>
               <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => setView('history')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95"><div className="bg-[#EBF2F2] p-3 rounded-full text-[#4A6C6F]"><History size={24} /></div><span className="text-sm font-medium tracking-widest">歷史紀錄</span></button>
-                <button onClick={() => setView('analytics')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95"><div className="bg-[#F5F0EB] p-3 rounded-full text-[#8B5E3C]"><BarChart2 size={24} /></div><span className="text-sm font-medium tracking-widest">數據統計</span></button>
+                <button onClick={() => setView('history')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#EBF2F2] p-3 rounded-full text-[#4A6C6F]"><History size={24} /></div><span className="font-medium text-sm tracking-widest">歷史紀錄</span></button>
+                <button onClick={() => setView('analytics')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#F5F0EB] p-3 rounded-full text-[#8B5E3C]"><BarChart2 size={24} /></div><span className="font-medium text-sm tracking-widest">數據統計</span></button>
               </div>
             </div>
           </div>
@@ -324,76 +502,115 @@ export default function App() {
         {view === 'inspect' && (
           <div className="flex flex-col h-full bg-[#F5F5F0]">
             <div className="bg-white px-6 py-6 shadow-md flex flex-col items-center sticky top-0 z-20 border-b border-gray-100 font-sans">
-              <div className="w-full flex justify-between items-center mb-2"><button onClick={() => setView('home')} className="p-2 -ml-2 text-[#555]"><X size={24} /></button><span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">Checking Room</span><div className="w-10"></div></div>
-              <button onClick={() => setShowRoomModal(true)} className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}><LayoutGrid size={22} /><span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '選擇房號'}</span><ChevronDown size={20} /></button>
+              <div className="w-full flex justify-between items-center mb-2">
+                  <button onClick={() => setView('home')} className="p-2 -ml-2 text-[#555]"><X size={24} /></button>
+                  <span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">Checking Room</span>
+                  <div className="w-10"></div>
+              </div>
+              <button 
+                  onClick={() => setShowRoomModal(true)}
+                  className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 transition-all active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}
+              >
+                  <LayoutGrid size={22} className={selectedRoom ? 'text-white' : 'text-gray-400'} />
+                  <span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '選擇房號'}</span>
+                  <ChevronDown size={20} className={selectedRoom ? 'text-white/50' : 'text-gray-400'} />
+              </button>
             </div>
+
             <div className="flex-1 overflow-y-auto pb-32 p-5 space-y-6">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-3 font-sans">
                 {['inspector', 'water', 'bed'].map(t => (
-                  <div key={t} onClick={() => { setStaffModalTarget(t); setShowStaffModal(true); }} className={`flex flex-col items-center p-3 rounded-xl border bg-white cursor-pointer ${inspectorName || (t==='water'?waterStaff:bedStaff) ? 'border-gray-200' : 'border-dashed opacity-70'}`}><span className="text-[10px] text-[#888] font-bold uppercase mb-1">{t === 'inspector' ? '查房員*' : t === 'water' ? '水組' : '床組'}</span><div className="font-bold text-sm truncate w-full text-center">{String(t === 'inspector' ? (inspectorName || '+') : t === 'water' ? (waterStaff || '待定') : (bedStaff || '待定'))}</div></div>
+                  <div key={t} onClick={() => { setStaffModalTarget(t); setShowStaffModal(true); }} className={`flex flex-col items-center p-3 rounded-xl border cursor-pointer ${inspectorName || (t==='water'?waterStaff:bedStaff) ? 'bg-white border-gray-200 shadow-sm' : 'border-dashed opacity-70'}`}>
+                    <span className="text-[10px] text-[#888] font-bold uppercase tracking-widest mb-1">{t === 'inspector' ? '查房員*' : t === 'water' ? '水組' : '床組'}</span>
+                    <div className="font-bold text-sm truncate w-full text-center">{String(t === 'inspector' ? (inspectorName || '+') : t === 'water' ? (waterStaff || '待定') : (bedStaff || '待定'))}</div>
+                  </div>
                 ))}
               </div>
-              <div className="bg-white p-1 rounded-2xl shadow-sm border flex">
+              <div className="bg-white p-1 rounded-2xl shadow-sm border flex font-sans">
                 {Object.values(TEAMS_INFO).map(t => (
                   <button key={t.id} onClick={() => setActiveTab(t.id.toLowerCase())} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${activeTab === t.id.toLowerCase() ? t.color : 'text-[#999]'}`}>{t.icon}<span>{String(t.name)}</span></button>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {TEAMS_INFO[activeTab.toUpperCase()].issues.map((i, idx) => (
-                  <button key={idx} onClick={() => { setCurrentIssue({ team: activeTab, title: i.label, grade: i.grade, note: '', photo: null, isCustom: false }); setShowIssueModal(true); }} className={`p-4 rounded-xl border text-left bg-white shadow-sm active:scale-95 ${i.color} border-transparent`}><div className="font-bold text-lg mb-1">{i.label}</div><div className="flex justify-between items-end"><span className="text-sm text-[#666] leading-tight w-2/3">{i.desc}</span><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${ERROR_GRADES[i.grade]?.badge}`}>{i.grade}</span></div></button>
-                ))}
-                <button onClick={() => { setCurrentIssue({ team: activeTab, title: '', grade: 'C', note: '', photo: null, isCustom: true }); setShowIssueModal(true); }} className="p-4 rounded-xl border-2 border-dashed border-[#DDD] flex flex-col items-center justify-center text-[#999] active:scale-95"><Plus size={24} /><span className="text-sm font-bold mt-1">自定義缺失</span></button>
+              <div className="font-sans">
+                <h3 className="font-serif font-bold text-[#444] text-sm tracking-widest mb-3 uppercase">Inspection Items</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {TEAMS_INFO[activeTab.toUpperCase()].issues.map((issue, idx) => (
+                    <button key={idx} onClick={() => { setCurrentIssue({ team: activeTab, title: issue.label, grade: issue.grade, note: '', photo: null, isCustom: false }); setShowIssueModal(true); }} className={`p-4 rounded-xl border text-left bg-white shadow-sm hover:shadow-md transition-all ${issue.color} border-transparent active:scale-95`}>
+                      <div className="font-bold text-lg mb-1">{String(issue.label)}</div>
+                      <div className="flex justify-between items-end"><span className="text-sm text-[#666] leading-tight w-2/3">{String(issue.desc)}</span><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${ERROR_GRADES[issue.grade]?.badge || 'bg-white/80'}`}>{String(issue.grade)}</span></div>
+                    </button>
+                  ))}
+                  <button onClick={() => { setCurrentIssue({ team: activeTab, title: '', grade: 'C', note: '', photo: null, isCustom: true }); setShowIssueModal(true); }} className="p-4 rounded-xl border-2 border-dashed border-[#DDD] flex flex-col items-center justify-center text-[#999] active:scale-95 transition-transform"><Plus size={24} /><span className="text-sm font-bold mt-1">自定義缺失</span></button>
+                </div>
               </div>
               {issues.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="font-serif font-bold text-[#444] text-sm px-1">已記錄 ({issues.length})</h3>
                   {issues.map(i => (
-                    <div key={i.id} className={`bg-white p-3 rounded-xl border-l-4 shadow-sm flex items-start gap-3 ${TEAMS_INFO[i.team.toUpperCase()].borderColor}`}><div className="flex-1"><span className={`text-[9px] font-bold uppercase ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C] text-sm">{i.title}</h4><p className="text-xs text-[#888]">{i.note || "無備註"}</p></div><button onClick={() => setIssues(issues.filter(x => x.id !== i.id))} className="text-[#DDD] hover:text-red-500"><X size={20} /></button></div>
+                    <div key={i.id} className={`bg-white p-3 rounded-xl border-l-4 shadow-sm flex items-start gap-3 ${TEAMS_INFO[i.team.toUpperCase()].borderColor}`}>
+                      <div className="flex-1">
+                        <span className={`text-[9px] font-bold uppercase ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span>
+                        <h4 className="font-bold text-[#2C2C2C] text-sm">{String(i.title)}</h4>
+                        <p className="text-xs text-[#888]">{String(i.note || "無備註")}</p>
+                      </div>
+                      <button onClick={() => setIssues(issues.filter(x => x.id !== i.id))} className="text-[#DDD] hover:text-red-500"><X size={20} /></button>
+                    </div>
                   ))}
                 </div>
               )}
             </div>
-            <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-5 border-t z-30"><button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 active:scale-95"><Save size={20} />提交紀錄</button></div>
+            <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-5 border-t z-30 font-sans"><button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 tracking-widest active:scale-95"><Save size={20} />{issues.length > 0 ? `提交 (${issues.length}項缺失)` : '提交 (PASS)'}</button></div>
           </div>
         )}
 
         {view === 'history' && (
           <div className="flex flex-col h-full bg-[#F5F5F0]">
-            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10"><div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">歷史紀錄</h2></div><button onClick={() => { setResetMode('all'); setShowResetModal(true); }} className="p-2 text-red-700 bg-red-50 rounded-full"><Trash2 size={20} /></button></div>
-            <div className="p-6 space-y-4 overflow-y-auto pb-20">
+            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10">
+              <div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">歷史紀錄</h2></div>
+              <button onClick={() => { setResetMode('all'); setShowResetModal(true); }} className="p-2 text-red-700 bg-red-50 rounded-full active:bg-red-200"><Trash2 size={20} /></button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto pb-20 font-sans">
               {roomsData.map(r => (
-                <div key={r.id} className="bg-white p-5 rounded-2xl shadow-sm border relative active:scale-[0.98]">
-                  <div className="absolute top-5 right-5"><button onClick={(e) => { e.stopPropagation(); setTargetDeleteId(r.id); setResetMode('single'); setShowResetModal(true); }} className="p-2 text-[#DDD] hover:text-red-500"><Trash2 size={16}/></button></div>
+                <div key={r.id} className="bg-white p-5 rounded-2xl shadow-sm border relative active:scale-[0.98] transition-all">
+                  <div className="absolute top-5 right-5 flex gap-2"><button onClick={(e) => { e.stopPropagation(); setTargetDeleteId(r.id); setResetMode('single'); setShowResetModal(true); }} className="p-2 text-[#DDD] hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div>
                   <div onClick={() => setSelectedHistoryItem(r)} className="cursor-pointer">
-                    <div className="flex justify-between items-start mb-3 pr-8"><div><h3 className="text-2xl font-serif">{r.roomId} 房</h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : '-'}</span></div>{r.hasGradeA ? <span className="bg-red-50 text-red-800 text-[10px] font-bold px-2 py-1 rounded border border-red-200 uppercase">A級異常</span> : <span className="bg-green-50 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200 uppercase">PASS</span>}</div>
+                      <div className="flex justify-between items-start mb-3 pr-8">
+                        <div><h3 className="text-2xl font-serif">{String(r.roomId)} <span className="text-sm text-[#888]">房</span></h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : '-'}</span></div>
+                        {r.hasGradeA ? <span className="bg-red-50 text-red-800 text-[10px] font-bold px-2 py-1 rounded border border-red-200 uppercase text-center min-w-[70px]">A級異常</span> : <span className="bg-green-50 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200 uppercase text-center min-w-[70px]">PASS</span>}
+                      </div>
                   </div>
-                  <div className="text-xs p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1">
-                    <span className="font-medium whitespace-nowrap">查: {r.inspector}</span>
+                  <div className="text-sm p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1 font-sans">
+                    <span className="font-medium whitespace-nowrap">查: {String(r.inspector)}</span>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={() => openHistoryStaffEdit(r.id, 'water')} className="flex-1 py-1 text-indigo-600 font-bold">水: {r.waterStaff || '補填'}</button>
+                    <button onClick={() => openHistoryStaffEdit(r.id, 'water')} className={`flex-1 py-1 px-1 rounded-md text-center transition-all active:scale-95 text-xs font-bold ${r.waterStaff ? 'text-[#4A6C6F] bg-white border border-[#4A6C6F]/20' : 'text-indigo-600 bg-indigo-50 border border-indigo-200'}`}>水: {String(r.waterStaff || '補填')}</button>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={() => openHistoryStaffEdit(r.id, 'bed')} className="flex-1 py-1 text-indigo-600 font-bold">床: {r.bedStaff || '補填'}</button>
+                    <button onClick={() => openHistoryStaffEdit(r.id, 'bed')} className={`flex-1 py-1 px-1 rounded-md text-center transition-all active:scale-95 text-xs font-bold ${r.bedStaff ? 'text-[#8B5E3C] bg-white border border-[#8B5E3C]/20' : 'text-indigo-600 bg-indigo-50 border border-indigo-200'}`}>床: {String(r.bedStaff || '補填')}</button>
                   </div>
+                  {r.issues && r.issues.length > 0 && <div className="mt-3 flex flex-wrap gap-1" onClick={() => setSelectedHistoryItem(r)}>{r.issues.slice(0, 3).map((i, idx) => <span key={idx} className="text-[9px] bg-[#F0F0F0] px-1.5 py-0.5 rounded text-[#888] font-sans">{String(i.title)}</span>)}{r.issues.length > 3 && <span className="text-[9px] text-[#BBB]">+{r.issues.length - 3}</span>}</div>}
                 </div>
               ))}
+              {roomsData.length === 0 && <div className="text-center py-20 text-[#CCC] flex flex-col items-center gap-3"><History size={48} className="opacity-20"/><p>目前尚無歷史紀錄</p></div>}
             </div>
           </div>
         )}
 
         {view === 'analytics' && (
           <div className="flex flex-col h-full bg-[#F5F5F0]">
-            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10"><div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">數據統計</h2></div><button onClick={() => alert("功能開發中，請稍候")} className="flex items-center gap-1 px-4 py-2 bg-[#EBF2F2] text-[#4A6C6F] rounded-lg text-xs font-bold border"><Download size={14} /> CSV</button></div>
-            <div className="p-6 space-y-6 overflow-y-auto pb-20">
+            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10">
+                <div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">數據統計</h2></div>
+                <button onClick={handleExportCSV} className="flex items-center gap-1 px-4 py-2 bg-[#EBF2F2] text-[#4A6C6F] rounded-lg text-xs font-bold border"><Download size={14} /> 匯出 CSV</button>
+            </div>
+            <div className="p-6 space-y-6 overflow-y-auto pb-20 font-sans">
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border"><p className="text-xs text-[#888] font-bold uppercase tracking-widest">本月檢查</p><p className="text-4xl font-serif mt-2 font-bold">{stats.count}</p></div>
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border"><p className="text-xs text-[#888] font-bold uppercase tracking-widest">缺失項目</p><p className="text-4xl font-serif text-[#8B3A3A] mt-2 font-bold">{stats.total}</p></div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border"><p className="text-xs text-[#888] font-bold uppercase tracking-widest">本月檢查</p><p className="text-4xl font-serif mt-2">{monthlyCount}</p></div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border"><p className="text-xs text-[#888] font-bold uppercase tracking-widest">缺失項目</p><p className="text-4xl font-serif text-[#8B3A3A] mt-2">{totalIssues}</p></div>
                 </div>
                 <div className="bg-white p-6 rounded-2xl border shadow-sm">
-                    <h3 className="font-serif font-bold text-sm mb-5">本月缺失排行</h3>
+                    <h3 className="font-serif font-bold text-sm mb-5 text-[#2C2C2C]">缺失排行</h3>
                     <div className="space-y-4">
-                        {stats.tops.map(([t, c], i) => (
-                            <div key={t} className="flex justify-between items-center"><div className="flex items-center gap-3 text-sm font-medium"><span className="w-5 h-5 bg-gray-100 flex items-center justify-center text-[10px] font-bold rounded">{i+1}</span>{t}</div><span className="font-bold text-sm">{c} 次</span></div>
-                        ))}
+                        {topIssues.length > 0 ? topIssues.map(([t, c], i) => (
+                            <div key={t} className="flex justify-between items-center pb-3 border-b border-[#F5F5F0] last:border-0 font-sans"><div className="flex items-center gap-3 text-sm font-medium"><span className="w-5 h-5 bg-[#F5F5F0] text-[#888] rounded flex items-center justify-center text-[10px] font-bold">{i+1}</span>{String(t)}</div><span className="font-bold text-xs bg-[#F5F5F0] px-2 py-1 rounded">{c} 次</span></div>
+                        )) : <p className="text-center text-gray-400 text-xs py-4">本月尚無缺失紀錄</p>}
                     </div>
                 </div>
             </div>
@@ -401,19 +618,20 @@ export default function App() {
         )}
       </div>
 
-      {/* Modals --- Modals 放在主容器底層 --- */}
-
-      {/* 房號矩陣 */}
+      {/* 房號矩陣選擇器 */}
       {showRoomModal && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl h-[80vh] flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-serif font-bold tracking-widest">請選擇房號</h3><button onClick={() => setShowRoomModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
-            <div className="flex-1 overflow-y-auto space-y-8 pb-10">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 h-[80vh] flex flex-col overflow-hidden font-sans">
+            <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-serif font-bold tracking-widest">請選擇房號</h3><p className="text-xs text-gray-400 font-sans uppercase">Select a room</p></div><button onClick={() => setShowRoomModal(false)} className="p-2 bg-gray-100 rounded-full active:scale-90 transition-transform"><X size={20}/></button></div>
+            <div className="flex-1 overflow-y-auto space-y-8 pr-2 pb-10">
                 {FLOORS_DATA.map(f => (
                     <div key={f.floor}>
-                        <div className="flex items-center gap-3 mb-4 sticky top-0 bg-white py-1 z-10"><span className="bg-[#2C2C2C] text-white text-xs font-bold px-3 py-1 rounded-full font-sans">{f.floor}F</span><div className="h-[1px] flex-1 bg-gray-100"></div></div>
+                        <div className="flex items-center gap-3 mb-4 sticky top-0 bg-white py-1 z-10 font-sans"><span className="bg-[#2C2C2C] text-white text-xs font-bold px-3 py-1 rounded-full font-sans">{f.floor}F</span><div className="h-[1px] flex-1 bg-gray-100"></div></div>
                         <div className="grid grid-cols-4 gap-3">
-                            {f.rooms.map(r => (<button key={r} onClick={() => { setSelectedRoom(r); setShowRoomModal(false); }} className={`py-4 rounded-xl text-lg font-serif font-bold ${selectedRoom === r ? 'bg-[#2C2C2C] text-white shadow-lg' : 'bg-gray-50 text-gray-600 border border-gray-100'}`}>{r}</button>))}
+                            {f.rooms.map(r => {
+                                const isDone = roomsData.some(d => d.roomId === r);
+                                return (<button key={r} onClick={() => { setSelectedRoom(r); setShowRoomModal(false); }} className={`relative py-4 rounded-xl text-lg font-serif font-bold transition-all active:scale-90 ${selectedRoom === r ? 'bg-[#2C2C2C] text-white shadow-lg ring-4 ring-[#2C2C2C]/10' : 'bg-gray-50 text-gray-600 border border-gray-100'}`}>{r}{isDone && <div className="absolute top-1 right-1"><CheckCircle size={12} className="text-[#2F855A] fill-[#2F855A]/10" /></div>}</button>);
+                            })}
                         </div>
                     </div>
                 ))}
@@ -421,68 +639,78 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* 缺失編輯 */}
+      
+      {/* 缺失編輯視窗 */}
       {showIssueModal && (
         <div className="fixed inset-0 z-[100] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm font-sans">
           <div className="bg-[#F9F9F9] w-full max-w-md rounded-t-3xl p-6 space-y-6 shadow-2xl animate-in slide-in-from-bottom-10">
-            <div className="flex justify-between items-center border-b pb-4"><h3 className="font-serif font-bold text-xl">{currentIssue.title || '記錄缺失'}</h3><button onClick={() => setShowIssueModal(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20}/></button></div>
-            {currentIssue.isCustom && <input className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-[#2C2C2C] focus:ring-2 outline-none" placeholder="輸入缺失名稱..." value={currentIssue.title} onChange={e => setCurrentIssue({...currentIssue, title: e.target.value})} />}
-            <div className="flex gap-2">
+            <div className="flex justify-between items-center border-b pb-4"><h3 className="font-serif font-bold text-xl">{String(currentIssue.title || '記錄缺失')}</h3><button onClick={() => setShowIssueModal(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20}/></button></div>
+            {currentIssue.isCustom && <input className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-[#2C2C2C] focus:ring-2 focus:ring-[#8B5E3C] outline-none" placeholder="輸入缺失名稱..." value={String(currentIssue.title)} onChange={e => setCurrentIssue({...currentIssue, title: e.target.value})} />}
+            <div>
+              <label className="text-[10px] text-[#888] font-bold uppercase mb-2 block tracking-widest uppercase">Severity Grade</label>
+              <div className="flex gap-2">
                 {Object.entries(ERROR_GRADES).map(([k, v]) => (
-                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}><span className="text-xs font-bold">{v.label}</span><span className="text-[8px] font-medium opacity-70 uppercase tracking-tighter">{v.subLabel}</span></button>
+                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}><span className="text-xs font-bold">{String(v.label)}</span><span className="text-[8px] font-medium opacity-70 uppercase tracking-tighter">{v.subLabel}</span></button>
                 ))}
+              </div>
             </div>
+            
+            {/* 懶人快選標籤 (僅在自定義模式下顯示) */}
             {currentIssue.isCustom && (
-              <div className="flex flex-wrap gap-2">
-                {COMMON_TAGS.map(t => (<button key={t} onClick={() => handleTagClick(t)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-[#555] active:bg-[#F5F5F0]">{t}</button>))}
+              <div>
+                <label className="text-[10px] text-[#888] font-bold uppercase mb-2 block tracking-widest uppercase">Quick Tags</label>
+                <div className="flex flex-wrap gap-2">
+                  {COMMON_TAGS.map(tag => (
+                    <button key={tag} onClick={() => handleTagClick(tag)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-[#555] active:bg-[#F5F5F0] transition-colors">{tag}</button>
+                  ))}
+                </div>
               </div>
             )}
-            <div className="relative"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 outline-none resize-none" placeholder="描述狀況..." value={currentIssue.note} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
+
+            <div className="relative"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 focus:ring-2 focus:ring-[#8B5E3C] outline-none resize-none" placeholder="詳細描述位置與狀況..." value={String(currentIssue.note)} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg active:scale-95">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
             <div className="flex gap-2">
-              <label className="flex-1 bg-white border-2 border-dashed border-[#DDD] rounded-xl py-4 flex flex-col items-center justify-center cursor-pointer h-24 overflow-hidden relative">
-                {currentIssue.photo ? <img src={currentIssue.photo} className="h-full w-full object-cover" onClick={async (e) => { e.preventDefault(); const rect = e.target.getBoundingClientRect(); const x = (e.clientX - rect.left) * (img.width/rect.width); const y = (e.clientY - rect.top) * (img.height/rect.height); const newPhoto = await drawCircleOnImage(currentIssue.photo, x, y); setCurrentIssue({...currentIssue, photo: newPhoto}); }} /> : <div className="flex flex-col items-center"><Camera className="text-[#AAA]" size={20}/><span className="text-[9px] font-bold text-[#AAA] mt-1">拍照/上傳</span></div>}
+              <label className="flex-1 bg-white border-2 border-dashed border-[#DDD] rounded-xl py-4 flex flex-col items-center justify-center cursor-pointer active:bg-gray-50 h-24 overflow-hidden relative">
+                {currentIssue.photo ? <img src={currentIssue.photo} className="h-full w-full object-cover" onClick={async (e) => { e.preventDefault(); const rect = e.target.getBoundingClientRect(); const x = (e.clientX - rect.left) * (800/rect.width); const y = (e.clientY - rect.top) * (800/rect.width); const newPhoto = await drawCircleOnImage(currentIssue.photo, x, y); setCurrentIssue({...currentIssue, photo: newPhoto}); }} /> : <div className="flex flex-col items-center"><Camera className="text-[#AAA]" size={20}/><span className="text-[9px] font-bold text-[#AAA] mt-1 uppercase text-center tracking-tighter">拍照/上傳</span></div>}
                 {!currentIssue.photo && <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const file = e.target.files[0]; if(file) { const compressed = await compressImage(file); setCurrentIssue({...currentIssue, photo: compressed}); } }} />}
               </label>
-              <button onClick={saveIssue} className="flex-[2] bg-[#2C2C2C] text-white py-4 rounded-xl font-bold tracking-widest shadow-lg">確認儲存</button>
+              <button onClick={saveIssue} className="flex-[2] bg-[#2C2C2C] text-white py-4 rounded-xl font-bold tracking-widest shadow-lg active:scale-95 uppercase font-sans">確認儲存</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 數據重置與刪除 */}
       {showResetModal && (
-        <div className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-2xl text-center space-y-4">
+        <div className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
+          <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-2xl text-center space-y-4 animate-in zoom-in-95">
             <div className="bg-red-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-red-600"><Lock size={24} /></div>
             <h3 className="font-bold text-lg">{resetMode === 'all' ? '數據重置' : '刪除紀錄'}</h3>
-            <input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)} className="w-full border-b-2 border-[#2C2C2C] p-2 text-center text-xl focus:outline-none" placeholder="••••" />
-            <div className="flex gap-2"><button onClick={() => { setShowResetModal(false); setResetPwd(''); }} className="flex-1 py-3 text-[#666] font-bold text-sm">取消</button><button onClick={executeDelete} className="flex-1 py-3 bg-[#8B3A3A] text-white rounded-xl font-bold text-sm">確認</button></div>
+            <p className="text-xs text-[#888]">請輸入後台管理密碼</p>
+            <input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)} className="w-full border-b-2 border-[#2C2C2C] p-2 text-center text-xl focus:outline-none font-mono" placeholder="••••" />
+            <div className="flex gap-2"><button onClick={() => { setShowResetModal(false); setResetPwd(''); setTargetDeleteId(null); }} className="flex-1 py-3 text-[#666] font-bold text-sm">取消</button><button onClick={executeDelete} className="flex-1 py-3 bg-[#8B3A3A] text-white rounded-xl font-bold text-sm shadow-md active:scale-95">確認執行</button></div>
           </div>
         </div>
       )}
 
-      {/* 人員選擇 */}
       {showStaffModal && (
         <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
-          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
             <div className="p-5 border-b flex justify-between items-center bg-white"><h3 className="font-bold tracking-widest font-serif">{historyEditTarget ? '修正人員' : '選擇人員'}</h3><button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null);}} className="p-2"><X size={24}/></button></div>
-            <div className="p-4 flex gap-2 bg-white"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0]'}`}><Edit2 size={18}/></button></div>
-            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">{INITIAL_STAFF.filter(n => n.includes(staffSearch)).map(n => (<button key={n} onClick={() => selectStaff(n)} className="py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm active:scale-95">{String(n)}</button>))}</div>
+            <div className="p-4 flex gap-2 bg-white border-b border-gray-50"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-colors ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0] text-[#555]'}`}><Edit2 size={18}/></button></div>
+            {isEditMode && (<div className="px-4 py-4 flex gap-2 animate-in slide-in-from-top-2 bg-white"><input className="flex-1 border border-gray-200 p-3 rounded-xl text-sm" placeholder="新增姓名..." value={newStaffName} onChange={e => setNewStaffName(e.target.value)} /><button onClick={async () => { if (!newStaffName.trim()) return; const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list'); await updateDoc(docRef, { bed: arrayUnion(newStaffName.trim()), water: arrayUnion(newStaffName.trim()) }); setNewStaffName(''); }} className="bg-black text-white px-4 rounded-xl text-xs font-bold uppercase">ADD</button></div>)}
+            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">{INITIAL_STAFF.filter(n => n.includes(staffSearch)).map(n => (<button key={n} onClick={() => selectStaff(n)} className="py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm active:scale-95 transition-all border border-transparent hover:border-indigo-200">{String(n)}</button>))}</div>
           </div>
         </div>
       )}
 
-      {/* 歷史詳情 */}
       {selectedHistoryItem && (
-        <div className="fixed inset-0 z-[150] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm font-sans">
-          <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-5 border-b bg-white flex justify-between items-center shadow-sm font-serif"><h3 className="font-bold text-xl">{selectedHistoryItem.roomId} 房 詳情</h3><button onClick={() => setSelectedHistoryItem(null)} className="p-2 bg-[#F0F0F0] rounded-full"><X size={20}/></button></div>
-            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
+        <div className="fixed inset-0 z-[150] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm">
+          <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl animate-in slide-in-from-bottom-10 overflow-hidden font-sans">
+            <div className="p-5 border-b bg-white flex justify-between items-center shadow-sm font-serif"><h3 className="font-bold text-xl">{String(selectedHistoryItem.roomId)} 房 缺失明細</h3><button onClick={() => setSelectedHistoryItem(null)} className="p-2 bg-[#F0F0F0] rounded-full"><X size={20}/></button></div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50 font-sans">
                {selectedHistoryItem.issues?.length > 0 ? selectedHistoryItem.issues.map((i, idx) => (
                  <div key={idx} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm ${TEAMS_INFO[i.team?.toUpperCase() || 'BED'].borderColor}`}>
-                    <div className="flex justify-between items-start mb-2"><div><span className={`text-[9px] font-bold uppercase mb-1 block ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C]">{i.title}</h4></div><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${(ERROR_GRADES[i.grade] || ERROR_GRADES['C']).color}`}>{i.grade}</span></div>
-                    <p className="text-sm text-[#666] mb-3 bg-[#F9F9F9] p-2 rounded">{i.note || "無補充說明"}</p>
+                    <div className="flex justify-between items-start mb-2"><div><span className={`text-[9px] font-bold uppercase mb-1 block ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C]">{String(i.title)}</h4></div><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${(ERROR_GRADES[i.grade] || ERROR_GRADES['C']).color}`}>{String(i.grade)}級</span></div>
+                    <p className="text-sm text-[#666] mb-3 bg-[#F9F9F9] p-2 rounded">{String(i.note || "無補充說明")}</p>
                     {i.photo && <div className="rounded-lg overflow-hidden border border-gray-100"><img src={i.photo} className="w-full h-auto" onClick={() => setPreviewImage(i.photo)} /></div>}
                  </div>
                )) : <div className="text-center py-20 text-[#CCC] font-bold tracking-widest flex flex-col items-center gap-3"><CheckCircle size={48} className="opacity-20"/><p>無缺失紀錄 (PASS)</p></div>}
@@ -492,7 +720,7 @@ export default function App() {
       )}
 
       {previewImage && (
-        <div className="fixed inset-0 z-[250] bg-black flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}><img src={previewImage} className="max-w-full max-h-full object-contain" /><button className="absolute top-4 right-4 text-white p-2 bg-black/50 rounded-full"><X size={24}/></button></div>
+        <div className="fixed inset-0 z-[250] bg-black flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}><img src={previewImage} className="max-w-full max-h-full object-contain shadow-2xl" /><button className="absolute top-4 right-4 text-white p-2 bg-black/50 rounded-full shadow-lg"><X size={24}/></button></div>
       )}
     </div>
   );
