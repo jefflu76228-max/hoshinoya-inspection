@@ -14,12 +14,12 @@ import {
   MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, Grid
 } from 'lucide-react';
 
-// --- Firebase 初始設定 (讀取 Vercel 環境變數) ---
+// --- Firebase 初始設定 (已修正為讀取 Vercel 環境變數) ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'hoshinoya-inspection-main-v1';
+const appId = 'hoshinoya-inspection-production'; // 固定 ID 確保資料庫路徑穩定
 
 // --- Gemini API 輔助函式 ---
 const callGemini = async (prompt, isJson = false) => {
@@ -37,7 +37,7 @@ const callGemini = async (prompt, isJson = false) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    if (!response.ok) throw new Error(`API 錯誤: ${response.status}`);
     const data = await response.json();
     return data.candidates?.[0]?.content?.parts?.[0]?.text;
   } catch (error) {
@@ -49,20 +49,26 @@ const callGemini = async (prompt, isJson = false) => {
 // --- 子元件 ---
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center p-8 min-h-screen bg-[#F5F5F0]">
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-4 font-sans">
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#2C2C2C]"></div>
       <p className="text-[#555] tracking-widest text-xs font-serif">載入中...</p>
     </div>
   </div>
 );
 
-// --- 常數配置 ---
+// --- 房號配置 ---
 const FLOORS_DATA = [
   { floor: 2, rooms: ["201", "202", "203", "204", "205", "206", "207", "208", "209", "210", "211", "212", "213"] },
   { floor: 3, rooms: ["301", "302", "303", "304", "305", "306", "307", "308", "309", "310", "311", "312", "313"] },
   { floor: 4, rooms: ["401", "402", "403", "405", "406", "407", "408", "409", "410", "411", "412"] },
   { floor: 5, rooms: ["501", "502", "503", "504", "505", "506", "507", "508", "509", "510", "511", "512", "513"] },
 ];
+
+const ROOM_LIST = (() => {
+  const rooms = [];
+  FLOORS_DATA.forEach(f => { f.rooms.forEach(r => rooms.push(r)); });
+  return rooms;
+})();
 
 const INITIAL_STAFF = [
   "王 佩貞", "何 欣怡", "何 渝沁", "吳 怡錚", "吳 至真", "吳 莉琦", "吳 瑞元", "宋 任翔", 
@@ -156,8 +162,8 @@ const drawCircleOnImage = (imageSrc, x, y) => {
       canvas.width = img.width; canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
-      ctx.beginPath(); ctx.arc(x, y, 50, 0, 2 * Math.PI);
-      ctx.lineWidth = 8; ctx.strokeStyle = '#EF4444'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 40, 0, 2 * Math.PI);
+      ctx.lineWidth = 6; ctx.strokeStyle = '#EF4444'; ctx.stroke();
       resolve(canvas.toDataURL('image/webp', 0.5));
     };
   });
@@ -213,7 +219,7 @@ export default function App() {
     if (!currentIssue.note) return;
     setIsAiLoading(true);
     try {
-      const prompt = `你是房務檢查員。改寫筆記為專業描述並判斷等級。筆記：${currentIssue.note}。回傳JSON: { "title": "...", "note": "...", "grade": "A"|"B"|"C" }`;
+      const prompt = `你是虹夕諾雅谷關房務員。改寫描述：${currentIssue.note}。JSON格式: { "title": "缺失標題", "note": "專業描述", "grade": "A"|"B"|"C" }`;
       const txt = await callGemini(prompt, true);
       if (txt) {
         const res = JSON.parse(txt);
@@ -228,8 +234,8 @@ export default function App() {
     setLoading(true);
     try {
       if (resetMode === 'all') {
-        const snapshot = await getDocs(query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections')));
-        await Promise.all(snapshot.docs.map(d => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', d.id))));
+        const snap = await getDocs(query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections')));
+        await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', d.id))));
         alert("數據已清空");
       } else {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', targetDeleteId));
@@ -293,7 +299,7 @@ export default function App() {
     link.click();
   };
 
-  // --- Auth ---
+  // --- Auth & Data ---
   useEffect(() => {
     signInAnonymously(auth);
     const saved = localStorage.getItem('lastInspector');
@@ -311,13 +317,12 @@ export default function App() {
     });
   }, [user]);
 
-  const getMonthlyStats = () => {
+  const stats = (() => {
     const cur = new Date().toISOString().slice(0, 7);
     const filtered = roomsData.filter(r => r.monthKey === cur || !r.monthKey);
     const counts = filtered.flatMap(r => r.issues || []).reduce((acc, i) => { if(i.title) acc[i.title] = (acc[i.title] || 0) + 1; return acc; }, {});
     return { count: filtered.length, total: filtered.reduce((a, c) => a + (c.issueCount || 0), 0), tops: Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 5) };
-  };
-  const stats = getMonthlyStats();
+  })();
 
   if (loading) return <LoadingSpinner />;
 
@@ -330,13 +335,13 @@ export default function App() {
               <h1 className="text-3xl font-serif tracking-[0.2em] mb-1">HOSHINOYA</h1>
               <p className="text-[#888] text-xs tracking-[0.3em] uppercase">Guguan Housekeeping</p>
             </div>
-            <div className="flex-1 px-6 py-8 space-y-5 -mt-6">
+            <div className="flex-1 px-6 py-8 space-y-5 -mt-6 font-sans">
               <button onClick={() => setView('inspect')} className="w-full bg-white p-6 rounded-2xl shadow-xl border border-white/50 flex items-center justify-between active:scale-95 transition-all">
-                <div className="flex items-center gap-5"><div className="bg-[#2C2C2C] text-white p-4 rounded-full"><CheckCircle size={28} /></div><div className="text-left"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1">Start Inspection</p></div></div><ChevronRight size={20} className="text-[#CCC]" />
+                <div className="flex items-center gap-5"><div className="bg-[#2C2C2C] text-white p-4 rounded-full"><CheckCircle size={28} /></div><div className="text-left font-sans"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1">Start Inspection</p></div></div><ChevronRight size={20} className="text-[#CCC]" />
               </button>
               <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => setView('history')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95"><div className="bg-[#EBF2F2] p-3 rounded-full text-[#4A6C6F]"><History size={24} /></div><span className="text-sm font-medium tracking-widest">歷史紀錄</span></button>
-                <button onClick={() => setView('analytics')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95"><div className="bg-[#F5F0EB] p-3 rounded-full text-[#8B5E3C]"><BarChart2 size={24} /></div><span className="text-sm font-medium tracking-widest">數據統計</span></button>
+                <button onClick={() => setView('history')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#EBF2F2] p-3 rounded-full text-[#4A6C6F]"><History size={24} /></div><span className="text-sm font-medium tracking-widest">歷史紀錄</span></button>
+                <button onClick={() => setView('analytics')} className="bg-white p-5 rounded-2xl shadow-md flex flex-col items-center gap-3 active:scale-95 transition-all"><div className="bg-[#F5F0EB] p-3 rounded-full text-[#8B5E3C]"><BarChart2 size={24} /></div><span className="text-sm font-medium tracking-widest">數據統計</span></button>
               </div>
             </div>
           </div>
@@ -346,12 +351,12 @@ export default function App() {
           <div className="flex flex-col h-full bg-[#F5F5F0]">
             <div className="bg-white px-6 py-6 shadow-md flex flex-col items-center sticky top-0 z-20 border-b border-gray-100 font-sans">
               <div className="w-full flex justify-between items-center mb-2"><button onClick={() => setView('home')} className="p-2 -ml-2 text-[#555]"><X size={24} /></button><span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">Checking Room</span><div className="w-10"></div></div>
-              <button onClick={() => setShowRoomModal(true)} className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}><Grid size={22} /><span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '房號'}</span><ChevronDown size={20} /></button>
+              <button onClick={() => setShowRoomModal(true)} className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}><Grid size={22} /><span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '選擇房號'}</span><ChevronDown size={20} /></button>
             </div>
             <div className="flex-1 overflow-y-auto pb-32 p-5 space-y-6">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-3 font-sans">
                 {['inspector', 'water', 'bed'].map(t => (
-                  <div key={t} onClick={() => { setStaffModalTarget(t); setShowStaffModal(true); }} className={`flex flex-col items-center p-3 rounded-xl border bg-white cursor-pointer ${inspectorName || (t==='water'?waterStaff:bedStaff) ? 'border-gray-200' : 'border-dashed opacity-70'}`}><span className="text-[10px] text-[#888] font-bold uppercase mb-1">{t === 'inspector' ? '查房員*' : t === 'water' ? '水組' : '床組'}</span><div className="font-bold text-sm truncate w-full text-center">{String(t === 'inspector' ? (inspectorName || '+') : t === 'water' ? (waterStaff || '待定') : (bedStaff || '待定'))}</div></div>
+                  <div key={t} onClick={() => { setStaffModalTarget(t); setShowStaffModal(true); }} className={`flex flex-col items-center p-3 rounded-xl border bg-white cursor-pointer ${inspectorName || (t==='water'?waterStaff:bedStaff) ? 'border-gray-200 shadow-sm' : 'border-dashed opacity-70'}`}><span className="text-[10px] text-[#888] font-bold uppercase tracking-widest mb-1">{t === 'inspector' ? '查房員*' : t === 'water' ? '水組' : '床組'}</span><div className="font-bold text-sm truncate w-full text-center">{String(t === 'inspector' ? (inspectorName || '+') : t === 'water' ? (waterStaff || '待定') : (bedStaff || '待定'))}</div></div>
                 ))}
               </div>
               <div className="bg-white p-1 rounded-2xl shadow-sm border flex font-sans">
@@ -359,63 +364,65 @@ export default function App() {
                   <button key={t.id} onClick={() => setActiveTab(t.id.toLowerCase())} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${activeTab === t.id.toLowerCase() ? t.color : 'text-[#999]'}`}>{t.icon}<span>{String(t.name)}</span></button>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 font-sans">
                 {TEAMS_INFO[activeTab.toUpperCase()].issues.map((i, idx) => (
                   <button key={idx} onClick={() => { setCurrentIssue({ team: activeTab, title: i.label, grade: i.grade, note: '', photo: null, isCustom: false }); setShowIssueModal(true); }} className={`p-4 rounded-xl border text-left bg-white shadow-sm active:scale-95 ${i.color} border-transparent`}><div className="font-bold text-lg mb-1">{i.label}</div><div className="flex justify-between items-end"><span className="text-sm text-[#666] leading-tight w-2/3">{i.desc}</span><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${ERROR_GRADES[i.grade]?.badge}`}>{i.grade}</span></div></button>
                 ))}
                 <button onClick={() => { setCurrentIssue({ team: activeTab, title: '', grade: 'C', note: '', photo: null, isCustom: true }); setShowIssueModal(true); }} className="p-4 rounded-xl border-2 border-dashed border-[#DDD] flex flex-col items-center justify-center text-[#999] active:scale-95"><Plus size={24} /><span className="text-sm font-bold mt-1">自定義缺失</span></button>
               </div>
               {issues.length > 0 && (
-                <div className="space-y-3">
+                <div className="space-y-3 font-sans">
                   <h3 className="font-serif font-bold text-[#444] text-sm px-1">已記錄 ({issues.length})</h3>
                   {issues.map(i => (
-                    <div key={i.id} className={`bg-white p-3 rounded-xl border-l-4 shadow-sm flex items-start gap-3 ${TEAMS_INFO[(i.team || 'water').toUpperCase()]?.borderColor || 'border-gray-300'}`}><div className="flex-1"><span className={`text-[9px] font-bold uppercase ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C] text-sm">{i.title}</h4><p className="text-xs text-[#888]">{i.note || "無備註"}</p></div><button onClick={() => setIssues(issues.filter(x => x.id !== i.id))} className="text-[#DDD] hover:text-red-500"><X size={20} /></button></div>
+                    <div key={i.id} className={`bg-white p-3 rounded-xl border-l-4 shadow-sm flex items-start gap-3 ${TEAMS_INFO[(i.team || 'water').toUpperCase()]?.borderColor}`}><div className="flex-1 font-sans"><span className={`text-[9px] font-bold uppercase ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C] text-sm">{i.title}</h4><p className="text-xs text-[#888]">{i.note || "無備註"}</p></div><button onClick={() => setIssues(issues.filter(x => x.id !== i.id))} className="text-[#DDD] hover:text-red-500"><X size={20} /></button></div>
                   ))}
                 </div>
               )}
             </div>
-            <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-5 border-t z-30"><button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 active:scale-95"><Save size={20} />提交紀錄</button></div>
+            <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-5 border-t z-30 font-sans"><button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 active:scale-95"><Save size={20} />提交紀錄</button></div>
           </div>
         )}
 
         {view === 'history' && (
           <div className="flex flex-col h-full bg-[#F5F5F0]">
-            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10"><div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">歷史紀錄</h2></div><button onClick={() => { setResetMode('all'); setShowResetModal(true); }} className="p-2 text-red-700 bg-red-50 rounded-full"><Trash2 size={20} /></button></div>
-            <div className="p-6 space-y-4 overflow-y-auto pb-20">
+            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10"><div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">歷史紀錄</h2></div><button onClick={() => { setResetMode('all'); setShowResetModal(true); }} className="p-2 text-red-700 bg-red-50 rounded-full active:bg-red-200"><Trash2 size={20} /></button></div>
+            <div className="p-6 space-y-4 overflow-y-auto pb-20 font-sans">
               {roomsData.map(r => (
                 <div key={r.id} className="bg-white p-5 rounded-2xl shadow-sm border relative active:scale-[0.98]">
                   <div className="absolute top-5 right-5"><button onClick={(e) => { e.stopPropagation(); setTargetDeleteId(r.id); setResetMode('single'); setShowResetModal(true); }} className="p-2 text-[#DDD] hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div>
                   <div onClick={() => setSelectedHistoryItem(r)} className="cursor-pointer">
-                    <div className="flex justify-between items-start mb-3 pr-8"><div><h3 className="text-2xl font-serif">{r.roomId} 房</h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : '-'}</span></div>{r.hasGradeA ? <span className="bg-red-50 text-red-800 text-[10px] font-bold px-2 py-1 rounded border border-red-200 uppercase">A級異常</span> : <span className="bg-green-50 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200 uppercase">PASS</span>}</div>
+                    <div className="flex justify-between items-start mb-3 pr-8 font-sans"><div><h3 className="text-2xl font-serif">{r.roomId} 房</h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : '-'}</span></div>{r.hasGradeA ? <span className="bg-red-50 text-red-800 text-[10px] font-bold px-2 py-1 rounded border border-red-200 uppercase">A級異常</span> : <span className="bg-green-50 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200 uppercase">PASS</span>}</div>
                   </div>
-                  <div className="text-xs p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1">
+                  <div className="text-xs p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1 font-sans">
                     <span className="font-medium whitespace-nowrap">查: {r.inspector}</span>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
                     <button onClick={() => openHistoryStaffEdit(r.id, 'water')} className="flex-1 py-1 text-indigo-600 font-bold">水: {r.waterStaff || '補填'}</button>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
                     <button onClick={() => openHistoryStaffEdit(r.id, 'bed')} className="flex-1 py-1 text-indigo-600 font-bold">床: {r.bedStaff || '補填'}</button>
                   </div>
-                  {r.issues && r.issues.length > 0 && <div className="mt-2 flex flex-wrap gap-1" onClick={() => setSelectedHistoryItem(r)}>{r.issues.slice(0, 3).map((i, idx) => <span key={idx} className="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-[#888]">{i.title}</span>)}{r.issues.length > 3 && <span className="text-[9px] text-[#BBB]">+{r.issues.length - 3}</span>}</div>}
+                  {(r.issues || []).length > 0 && <div className="mt-2 flex flex-wrap gap-1 font-sans">{r.issues.slice(0, 3).map((i, idx) => <span key={idx} className="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-[#888]">{i.title}</span>)}{r.issues.length > 3 && <span className="text-[9px] text-[#BBB]">+{r.issues.length - 3}</span>}</div>}
                 </div>
               ))}
-              {roomsData.length === 0 && <div className="text-center py-20 text-[#CCC] flex flex-col items-center gap-3"><History size={48} className="opacity-20"/><p>目前尚無歷史紀錄</p></div>}
+              {roomsData.length === 0 && <div className="text-center py-20 text-[#CCC] flex flex-col items-center gap-3"><History size={48} className="opacity-20"/><p className="font-sans">目前尚無歷史紀錄</p></div>}
             </div>
           </div>
         )}
 
         {view === 'analytics' && (
           <div className="flex flex-col h-full bg-[#F5F5F0]">
-            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10"><div className="flex items-center"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-serif font-bold text-xl ml-3">數據統計</h2></div><button onClick={handleExportCSV} className="flex items-center gap-1 px-4 py-2 bg-[#EBF2F2] text-[#4A6C6F] rounded-lg text-xs font-bold border"><Download size={14} /> 匯出 CSV</button></div>
+            <div className="bg-white/80 backdrop-blur-md px-6 py-4 border-b flex justify-between items-center sticky top-0 z-10"><div className="flex items-center font-serif"><button onClick={() => setView('home')} className="p-2"><X size={24} /></button><h2 className="font-bold text-xl ml-3">數據統計</h2></div><button onClick={handleExportCSV} className="flex items-center gap-1 px-4 py-2 bg-[#EBF2F2] text-[#4A6C6F] rounded-lg text-xs font-bold border font-sans"><Download size={14} /> CSV</button></div>
             <div className="p-6 space-y-6 overflow-y-auto pb-20 font-sans">
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> 本月檢查</p><p className="text-4xl font-serif mt-2 font-bold text-[#2C2C2C]">{stats.count}</p></div>
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><AlertTriangle size={12}/> 缺失總計</p><p className="text-4xl font-serif text-[#8B3A3A] mt-2 font-bold">{stats.total}</p></div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><MapPin size={12}/> 本月檢查</p><p className="text-4xl font-serif mt-2 font-bold text-[#2C2C2C]">{stats.count}</p></div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><AlertTriangle size={12}/> 缺失總計</p><p className="text-4xl font-serif text-[#8B3A3A] mt-2 font-bold">{stats.total}</p></div>
                 </div>
-                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm"><h3 className="font-serif font-bold text-lg text-[#2C2C2C] flex items-center gap-2"><BarChart2 size={20} className="text-[#8B5E3C]" /> 本月缺失排行</h3>
-                    <div className="space-y-5 mt-4">
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h3 className="font-serif font-bold text-lg mb-5 flex items-center gap-2"><BarChart2 size={20} className="text-[#8B5E3C]" /> 本月缺失排行</h3>
+                    <div className="space-y-5">
                         {stats.tops.map(([t, c], i) => (
                             <div key={t} className="flex justify-between items-center font-sans"><div className="flex items-center gap-4 flex-1 min-w-0"><div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-[#8B3A3A] text-white shadow-sm' : 'bg-gray-100 text-gray-400'}`}>{i + 1}</div><span className="font-medium text-sm text-[#444] truncate">{t}</span></div><span className="font-bold text-sm text-[#2C2C2C]">{c} 次</span></div>
                         ))}
+                        {stats.tops.length === 0 && <p className="text-center text-gray-300 text-sm font-sans">尚無統計數據</p>}
                     </div>
                 </div>
             </div>
@@ -423,18 +430,20 @@ export default function App() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* Modals --- Modals 放在主容器底層 --- */}
+
       {showRoomModal && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl h-[80vh] flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center mb-6"><div><h3 className="text-xl font-serif font-bold tracking-widest">請選擇房號</h3><p className="text-xs text-gray-400 uppercase font-sans">Select a room</p></div><button onClick={() => setShowRoomModal(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl h-[80vh] flex flex-col overflow-hidden font-sans">
+            <div className="flex justify-between items-center mb-6 font-serif"><div><h3 className="text-xl font-bold tracking-widest">請選擇房號</h3><p className="text-xs text-gray-400 font-sans uppercase">Select a room</p></div><button onClick={() => setShowRoomModal(false)} className="p-2 bg-gray-100 rounded-full active:scale-90 transition-transform"><X size={20}/></button></div>
             <div className="flex-1 overflow-y-auto space-y-8 pb-10">
                 {FLOORS_DATA.map(f => (
-                    <div key={f.floor}><div className="flex items-center gap-3 mb-4 sticky top-0 bg-white py-1 z-10 font-sans"><span className="bg-[#2C2C2C] text-white text-xs font-bold px-3 py-1 rounded-full">{f.floor}F</span><div className="h-[1px] flex-1 bg-gray-100"></div></div>
+                    <div key={f.floor}>
+                        <div className="flex items-center gap-3 mb-4 sticky top-0 bg-white py-1 z-10 font-sans"><span className="bg-[#2C2C2C] text-white text-xs font-bold px-3 py-1 rounded-full">{f.floor}F</span><div className="h-[1px] flex-1 bg-gray-100"></div></div>
                         <div className="grid grid-cols-4 gap-3">
                             {f.rooms.map(r => {
                                 const isDone = roomsData.some(d => d.roomId === r);
-                                return (<button key={r} onClick={() => { setSelectedRoom(r); setShowRoomModal(false); }} className={`relative py-4 rounded-xl text-lg font-serif font-bold transition-all active:scale-90 ${selectedRoom === r ? 'bg-[#2C2C2C] text-white shadow-lg' : 'bg-gray-50 text-gray-600 border border-gray-100'}`}>{r}{isDone && <div className="absolute top-1 right-1"><CheckCircle size={12} className="text-[#2F855A] fill-[#2F855A]/10" /></div>}</button>);
+                                return (<button key={r} onClick={() => { setSelectedRoom(r); setShowRoomModal(false); }} className={`relative py-4 rounded-xl text-lg font-serif font-bold transition-all active:scale-90 ${selectedRoom === r ? 'bg-[#2C2C2C] text-white shadow-lg ring-4 ring-[#2C2C2C]/10' : 'bg-gray-50 text-gray-600 border border-gray-100'}`}>{r}{isDone && <div className="absolute top-1 right-1"><CheckCircle size={12} className="text-[#2F855A] fill-[#2F855A]/10" /></div>}</button>);
                             })}
                         </div>
                     </div>
@@ -448,31 +457,33 @@ export default function App() {
         <div className="fixed inset-0 z-[100] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm font-sans">
           <div className="bg-[#F9F9F9] w-full max-w-md rounded-t-3xl p-6 space-y-6 shadow-2xl animate-in slide-in-from-bottom-10">
             <div className="flex justify-between items-center border-b pb-4"><h3 className="font-serif font-bold text-xl">{currentIssue.title || '記錄缺失'}</h3><button onClick={() => setShowIssueModal(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20}/></button></div>
-            {currentIssue.isCustom && <input className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-[#2C2C2C] focus:ring-2 outline-none" placeholder="輸入缺失名稱..." value={currentIssue.title} onChange={e => setCurrentIssue({...currentIssue, title: e.target.value})} />}
-            <div className="flex gap-2">
+            {currentIssue.isCustom && <input className="w-full p-4 bg-white border border-gray-200 rounded-xl font-bold text-[#2C2C2C] focus:ring-2 outline-none font-sans" placeholder="輸入缺失名稱..." value={currentIssue.title} onChange={e => setCurrentIssue({...currentIssue, title: e.target.value})} />}
+            <div><label className="text-[10px] text-[#888] font-bold uppercase mb-2 block tracking-widest font-sans uppercase">Severity Grade</label>
+              <div className="flex gap-2">
                 {Object.entries(ERROR_GRADES).map(([k, v]) => (
-                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}><span className="text-xs font-bold">{v.label}</span><span className="text-[8px] font-medium opacity-70 uppercase tracking-tighter">{v.subLabel}</span></button>
+                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}><span className="text-xs font-bold font-sans">{String(v.label)}</span><span className="text-[8px] font-medium opacity-70 uppercase tracking-tighter">{v.subLabel}</span></button>
                 ))}
+              </div>
             </div>
             {currentIssue.isCustom && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 font-sans">
                 {COMMON_TAGS.map(t => (<button key={t} onClick={() => handleTagClick(t)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-[#555] active:bg-[#F5F5F0] transition-colors">{t}</button>))}
               </div>
             )}
-            <div className="relative"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 outline-none resize-none" placeholder="描述狀況..." value={currentIssue.note} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg active:scale-95">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
-            <div className="flex gap-2">
+            <div className="relative font-sans"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 outline-none resize-none" placeholder="詳細描述..." value={currentIssue.note} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg active:scale-95">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
+            <div className="flex gap-2 font-sans">
               <label className="flex-1 bg-white border-2 border-dashed border-[#DDD] rounded-xl py-4 flex flex-col items-center justify-center cursor-pointer h-24 overflow-hidden relative active:bg-gray-50 transition-colors">
                 {currentIssue.photo ? <img src={currentIssue.photo} className="h-full w-full object-cover" onClick={async (e) => { e.preventDefault(); const rect = e.target.getBoundingClientRect(); const x = (e.clientX - rect.left) * (720/rect.width); const y = (e.clientY - rect.top) * (720/rect.width); const newPhoto = await drawCircleOnImage(currentIssue.photo, x, y); setCurrentIssue({...currentIssue, photo: newPhoto}); }} /> : <div className="flex flex-col items-center"><Camera className="text-[#AAA]" size={20}/><span className="text-[9px] font-bold text-[#AAA] mt-1 text-center tracking-tighter">拍照/上傳</span></div>}
                 {!currentIssue.photo && <input type="file" accept="image/*" className="hidden" onChange={async (e) => { if(e.target.files[0]) { const compressed = await compressImage(e.target.files[0]); setCurrentIssue({...currentIssue, photo: compressed}); } }} />}
               </label>
-              <button onClick={saveIssue} className="flex-[2] bg-[#2C2C2C] text-white py-4 rounded-xl font-bold tracking-widest shadow-lg">確認儲存</button>
+              <button onClick={saveIssue} className="flex-[2] bg-[#2C2C2C] text-white py-4 rounded-xl font-bold tracking-widest shadow-lg active:scale-95 uppercase font-sans">確認儲存</button>
             </div>
           </div>
         </div>
       )}
 
       {showResetModal && (
-        <div className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
           <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-2xl text-center space-y-4 animate-in zoom-in-95">
             <div className="bg-red-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-red-600"><Lock size={24} /></div>
             <h3 className="font-bold text-lg">{resetMode === 'all' ? '數據重置' : '刪除紀錄'}</h3>
@@ -484,24 +495,25 @@ export default function App() {
 
       {showStaffModal && (
         <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
-          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
+          <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden">
             <div className="p-5 border-b flex justify-between items-center bg-white font-serif"><h3 className="font-bold tracking-widest">{historyEditTarget ? '修正人員' : '選擇人員'}</h3><button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null);}} className="p-2"><X size={24}/></button></div>
-            <div className="p-4 flex gap-2 bg-white"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0]'}`}><Edit2 size={18}/></button></div>
-            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">{INITIAL_STAFF.filter(n => n.includes(staffSearch)).map(n => (<button key={n} onClick={() => selectStaff(n)} className="py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm active:scale-95 transition-all border border-transparent hover:border-indigo-200">{n}</button>))}</div>
+            <div className="p-4 flex gap-2 bg-white"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm font-sans" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-all ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0]'}`}><Edit2 size={18}/></button></div>
+            {isEditMode && (<div className="px-4 py-4 flex gap-2 animate-in slide-in-from-top-2 bg-white"><input className="flex-1 border border-gray-200 p-3 rounded-xl text-sm font-sans" placeholder="新增姓名..." value={newStaffName} onChange={e => setNewStaffName(e.target.value)} /><button onClick={async () => { if (!newStaffName.trim()) return; const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list'); await updateDoc(docRef, { bed: arrayUnion(newStaffName.trim()), water: arrayUnion(newStaffName.trim()) }); setNewStaffName(''); }} className="bg-black text-white px-4 rounded-xl text-xs font-bold uppercase font-sans">ADD</button></div>)}
+            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">{INITIAL_STAFF.filter(n => n.includes(staffSearch)).map(n => (<button key={n} onClick={() => selectStaff(n)} className="py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm active:scale-95 transition-all border border-transparent hover:border-indigo-200 font-sans">{n}</button>))}</div>
           </div>
         </div>
       )}
 
       {selectedHistoryItem && (
         <div className="fixed inset-0 z-[150] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm font-sans">
-          <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
+          <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl overflow-hidden">
             <div className="p-5 border-b bg-white flex justify-between items-center shadow-sm font-serif"><h3 className="font-bold text-xl">{selectedHistoryItem.roomId} 房 詳情</h3><button onClick={() => setSelectedHistoryItem(null)} className="p-2 bg-[#F0F0F0] rounded-full"><X size={20}/></button></div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50 font-sans">
                {(selectedHistoryItem.issues || []).map((i, idx) => (
                  <div key={idx} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm ${TEAMS_INFO[(i.team || 'water').toUpperCase()]?.borderColor || 'border-gray-300'}`}>
-                    <div className="flex justify-between items-start mb-2"><div><span className={`text-[9px] font-bold uppercase mb-1 block ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C]">{i.title}</h4></div><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${(ERROR_GRADES[i.grade] || ERROR_GRADES['C']).color}`}>{i.grade}</span></div>
-                    <p className="text-sm text-[#666] mb-3 bg-[#F9F9F9] p-2 rounded">{i.note || "無補充說明"}</p>
-                    {i.photo && <div className="rounded-lg overflow-hidden border border-gray-100"><img src={i.photo} className="w-full h-auto" onClick={() => setPreviewImage(i.photo)} /></div>}
+                    <div className="flex justify-between items-start mb-2 font-sans"><div><span className={`text-[9px] font-bold uppercase mb-1 block ${i.team === 'water' ? 'text-[#4A6C6F]' : 'text-[#8B5E3C]'}`}>{i.team === 'water' ? '水組' : '床組'}</span><h4 className="font-bold text-[#2C2C2C]">{i.title}</h4></div><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${(ERROR_GRADES[i.grade] || ERROR_GRADES['C']).color}`}>{i.grade}</span></div>
+                    <p className="text-sm text-[#666] mb-3 bg-[#F9F9F9] p-2 rounded font-sans">{i.note || "無補充說明"}</p>
+                    {i.photo && <div className="rounded-lg overflow-hidden border border-gray-100"><img src={i.photo} className="w-full h-auto cursor-zoom-in" onClick={() => setPreviewImage(i.photo)} /></div>}
                  </div>
                ))}
                {(!selectedHistoryItem.issues || selectedHistoryItem.issues.length === 0) && <div className="text-center py-20 text-[#CCC] font-bold tracking-widest flex flex-col items-center gap-3 font-sans"><CheckCircle size={48} className="opacity-20"/><p>無缺失紀錄 (PASS)</p></div>}
@@ -511,7 +523,7 @@ export default function App() {
       )}
 
       {previewImage && (
-        <div className="fixed inset-0 z-[250] bg-black flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}><img src={previewImage} className="max-w-full max-h-full object-contain" /><button className="absolute top-4 right-4 text-white p-2 bg-black/50 rounded-full shadow-lg"><X size={24}/></button></div>
+        <div className="fixed inset-0 z-[250] bg-black flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}><img src={previewImage} className="max-w-full max-h-full object-contain shadow-2xl" /><button className="absolute top-4 right-4 text-white p-2 bg-black/50 rounded-full shadow-lg transition-transform active:scale-90"><X size={24}/></button></div>
       )}
     </div>
   );
