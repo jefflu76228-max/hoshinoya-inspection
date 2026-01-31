@@ -14,14 +14,14 @@ import {
   MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, Grid
 } from 'lucide-react';
 
-// --- Firebase Config (Vercel 環境變數) ---
+// --- Firebase Config (已設為 Vercel 專用) ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'hoshinoya-guguan-production-v2';
 
-// --- Gemini API ---
+// --- Gemini API (已設為 Vercel 專用) ---
 const callGemini = async (prompt, isJson = false) => {
   const apiKey = import.meta.env.VITE_GEMINI_KEY; 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
@@ -292,7 +292,7 @@ export default function App() {
     link.click();
   };
 
-  // --- Auth ---
+  // --- Auth & Data ---
   useEffect(() => {
     signInAnonymously(auth);
     const saved = localStorage.getItem('lastInspector');
@@ -389,9 +389,9 @@ export default function App() {
                   <div className="text-xs p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1 font-sans">
                     <span className="font-medium whitespace-nowrap">查: {r.inspector}</span>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={() => openHistoryStaffEdit(r.id, 'water')} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">水: {r.waterStaff || '補填'}</button>
+                    <button onClick={(e) => { e.stopPropagation(); openHistoryStaffEdit(r.id, 'water'); }} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">水: {r.waterStaff || '補填'}</button>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={() => openHistoryStaffEdit(r.id, 'bed')} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">床: {r.bedStaff || '補填'}</button>
+                    <button onClick={(e) => { e.stopPropagation(); openHistoryStaffEdit(r.id, 'bed'); }} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">床: {r.bedStaff || '補填'}</button>
                   </div>
                   {(r.issues || []).length > 0 && <div className="mt-2 flex flex-wrap gap-1 font-sans">{r.issues.slice(0, 3).map((i, idx) => <span key={idx} className="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-[#888]">{i.title}</span>)}{r.issues.length > 3 && <span className="text-[9px] text-[#BBB]">+{r.issues.length - 3}</span>}</div>}
                 </div>
@@ -498,7 +498,7 @@ export default function App() {
       {selectedHistoryItem && (
         <div className="fixed inset-0 z-[150] bg-black/60 flex items-end sm:items-center justify-center backdrop-blur-sm font-sans">
           <div className="bg-[#F9F9F9] w-full max-w-md h-[80vh] rounded-t-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
-            <div className="p-5 border-b bg-white flex justify-between items-center shadow-sm font-serif"><h3 className="font-bold text-xl">{selectedHistoryItem.roomId} 房 詳情</h3><button onClick={() => setSelectedHistoryItem(null)} className="p-2 bg-[#F0F0F0] rounded-full"><X size={20}/></button></div>
+            <div className="p-5 border-b bg-white flex justify-between items-center shadow-sm font-serif"><h3 className="font-bold text-xl">{String(selectedHistoryItem.roomId)} 房 詳情</h3><button onClick={() => setSelectedHistoryItem(null)} className="p-2 bg-[#F0F0F0] rounded-full"><X size={20}/></button></div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50 font-sans">
                {(selectedHistoryItem.issues || []).map((i, idx) => (
                  <div key={idx} className={`bg-white p-4 rounded-xl border-l-4 shadow-sm ${TEAMS_INFO[(i.team || 'water').toUpperCase()]?.borderColor || 'border-gray-300'}`}>
