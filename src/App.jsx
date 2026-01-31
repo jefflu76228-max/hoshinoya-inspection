@@ -11,39 +11,49 @@ import {
   Droplets, Bed, History, FileText, Tag, Plus,
   AlertOctagon, AlertCircle, Info, ThumbsUp, Users, Search,
   Edit2, Trash2, UserPlus, Sparkles, Loader2, FileJson, Download, PenTool,
-  MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, Grid
+  MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, Grid, CloudOff, PenSquare, MessageSquareQuote
 } from 'lucide-react';
 
-// --- Firebase Config (已設為 Vercel 專用) ---
-const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+// --- Configuration Handling ---
+const getEnvVar = (key) => {
+  try { return import.meta.env[key]; } catch (e) { return undefined; }
+};
+
+let firebaseConfig = {};
+let apiKey = "";
+
+if (typeof __firebase_config !== 'undefined') {
+  try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) {}
+} else {
+  const rawConfig = getEnvVar('VITE_FIREBASE_CONFIG');
+  if (rawConfig) {
+    try { firebaseConfig = JSON.parse(rawConfig); apiKey = getEnvVar('VITE_GEMINI_KEY'); } catch (e) {}
+  }
+}
+
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'hoshinoya-guguan-production-v2';
 
-// --- Gemini API (已設為 Vercel 專用) ---
+// 權限修正：使用環境提供的 App ID 並進行消毒，若無則使用固定 ID
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'hoshinoya-guguan-production-v4';
+const appId = rawAppId.replace(/[^a-zA-Z0-9_]/g, '_');
+
+// --- Gemini API ---
 const callGemini = async (prompt, isJson = false) => {
-  const apiKey = import.meta.env.VITE_GEMINI_KEY; 
+  if (!apiKey) return null;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
-  
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: isJson ? { responseMimeType: "application/json" } : {}
   };
-
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!response.ok) throw new Error(`API Error: ${response.status}`);
     const data = await response.json();
     return data.candidates?.[0]?.content?.parts?.[0]?.text;
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    return null;
-  }
+  } catch (error) { return null; }
 };
 
 const LoadingSpinner = () => (
@@ -80,42 +90,75 @@ const INITIAL_STAFF = [
 
 const COMMON_TAGS = ["毛髮", "灰塵", "水漬", "指紋", "垃圾", "破損", "異味", "雜音", "未補", "未歸位", "皺摺", "過期", "歪斜", "皂垢", "生鏽"];
 
+// --- 修正：補回遺失的標籤庫 ---
+const ISSUE_SPECIFIC_TAGS = {
+  // Bed Team
+  '遺留物/垃圾': ['衛生紙', '塑膠袋', '發票', '衣物', '私人保養品', '口罩', '食物殘渣', '鞋子'],
+  '毛髮/碎屑/蟲屍': ['長髮', '短髮', '捲毛', '體毛', '灰塵', '棉絮', '餅乾屑', '死蒼蠅', '螞蟻', '蜘蛛'],
+  '備品未補/全空': ['拖鞋', '洗衣袋', '手提袋', '信紙', '筆', '礦泉水', '茶包', '咖啡濾掛', '糖包', '奶精'],
+  '冰箱/器皿髒污': ['水漬', '茶垢', '指紋', '咖啡漬', '黏膩', '異味', '灰塵', '未擦乾'],
+  '陽台/戶外區髒污': ['落葉', '鳥屎', '沙塵', '積水', '煙蒂', '蜘蛛網', '扶手髒污', '地板髒污'],
+  '鋪床污漬/破損': ['血漬', '黃斑', '黑點', '鞋印', '破損', '破洞', '脫線', '毛球'],
+  '備品過期': ['礦泉水', '茶包', '咖啡', '小點心', '飲料'],
+  '高處/死角灰塵': ['衣櫃上方', '燈罩', '畫框上緣', '空調出風口', '床頭板後', '踢腳板', '窗簾盒'],
+  '鋪床不美觀/皺摺': ['床單皺摺', '枕頭塌陷', '床尾巾歪斜', '中線不正', '棉被不平整', '床裙未理'],
+  '衣架/保險箱失誤': ['衣架數量不足', '衣架方向不一', '衣架損壞', '保險箱未開', '保險箱未擦拭', '內部有雜物'],
+  '枕頭/抱枕擺放': ['方向錯誤', '正反面顛倒', '拉鍊外露', '排列不整齊', '未拍蓬'],
+  '空調/燈光未重置': ['溫度設定錯誤', '風量錯誤', '模式錯誤', '夜燈未開', '主燈未關', '玄關燈未開'],
+  '衛生紙/備品微調': ['衛生紙未折角', '未補滿', '擺放歪斜', '有水漬', '備品盤凌亂'],
+
+  // Water Team
+  '熱水壺/杯盤髒污': ['內部水垢', '外部指紋', '底座水漬', '杯緣口紅印', '茶垢', '破損'],
+  '馬桶汙垢/尿漬': ['尿漬', '黃垢', '毛髮', '水漬', '異味', '消毒封條未貼', '蓋子未蓋'],
+  '浴池青苔/髒汙': ['青苔', '底部沙子', '邊緣滑膩', '樹葉', '水垢', '毛髮', '出水口髒污'],
+  '排水孔毛髮/異味': ['堵塞', '毛髮堆積', '發霉', '異味', '蓋子未蓋好', '皂垢'],
+  '鏡面/玻璃水痕': ['水漬', '指紋', '霧氣', '皂垢', '擦拭痕跡', '毛絮'],
+  '地板濕滑/積水': ['大灘積水', '濕滑', '未擦乾', '腳印', '水痕'],
+  '垃圾桶未清': ['垃圾未倒', '未套袋', '垃圾袋外露', '異味', '桶身髒污', '蓋子損壞'],
+  '嚴重水垢堆積': ['水龍頭', '蓮蓬頭', '玻璃門', '洗手台', '浴缸邊緣', '鏡面底部'],
+  '溫泉水質/溫度': ['溫度過高', '溫度過低', '水質混濁', '有黑色雜質', '水量不足'],
+  '高處/死角蜘蛛網': ['天花板角落', '通風口', '窗框', '百葉窗', '淋浴間頂部'],
+  '備品補充/復歸': ['大毛巾不足', '小毛巾不足', '地墊未鋪', '衛生紙不足', '洗手乳不足', '乳液不足'],
+  '五金水垢/皂垢': ['水龍頭', '把手', '置物架', '排水塞', '按鈕', '掛鉤'],
+  '設備歸位微調': ['蓮蓬頭方向', '木桶位置', '椅子不正', '水塞未拔', '水瓢位置']
+};
+
 const QUICK_ISSUES = {
   BED: [
-    { label: '遺留物/垃圾', grade: 'A', desc: '含自身用品/衣物/垃圾', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '毛髮/碎屑/蟲屍', grade: 'A', desc: '地板/抽屜明顯可見', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '備品未補/全空', grade: 'A', desc: '器皿/拖鞋/水全空', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '冰箱/器皿髒污', grade: 'A', desc: '內部污漬/杯具有水痕', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '陽台/戶外區髒污', grade: 'A', desc: '家具/地板/欄杆髒', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '鋪床污漬/破損', grade: 'A', desc: '床單/被套有髒污', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '備品過期', grade: 'B', desc: '食品/飲料過期', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
-    { label: '高處/死角灰塵', grade: 'B', desc: '樓梯/檻燈/角落積塵', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
-    { label: '鋪床不美觀/皺摺', grade: 'C', desc: '大於A5紙皺摺/不平', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
-    { label: '衣架/保險箱失誤', grade: 'C', desc: '數量不對/收納錯誤', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
-    { label: '枕頭/抱枕擺放', grade: 'C', desc: '方向錯誤/凌亂', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
-    { label: '空調/燈光未重置', grade: 'C', desc: '溫度風量/門口燈', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
-    { label: '衛生紙/備品微調', grade: 'C', desc: '無三角形/未補滿', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
+    { label: '遺留物/垃圾', grade: 'A', desc: '含自身用品/衣物/垃圾', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '毛髮/碎屑/蟲屍', grade: 'A', desc: '地板/抽屜明顯可見', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '備品未補/全空', grade: 'A', desc: '器皿/拖鞋/水全空', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '冰箱/器皿髒污', grade: 'A', desc: '內部污漬/杯具有水痕', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '陽台/戶外區髒污', grade: 'A', desc: '家具/地板/欄杆髒', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '鋪床污漬/破損', grade: 'A', desc: '床單/被套有髒污', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '備品過期', grade: 'B', desc: '食品/飲料過期', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
+    { label: '高處/死角灰塵', grade: 'B', desc: '樓梯/檻燈/角落積塵', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
+    { label: '鋪床不美觀/皺摺', grade: 'C', desc: '大於A5紙皺摺/不平', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
+    { label: '衣架/保險箱失誤', grade: 'C', desc: '數量不對/收納錯誤', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
+    { label: '枕頭/抱枕擺放', grade: 'C', desc: '方向錯誤/凌亂', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
+    { label: '空調/燈光未重置', grade: 'C', desc: '溫度風量/門口燈', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
+    { label: '衛生紙/備品微調', grade: 'C', desc: '無三角形/未補滿', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
   ],
   WATER: [
-    { label: '熱水壺/杯盤髒污', grade: 'A', desc: '水漬/茶垢/破損', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '馬桶汙垢/尿漬', grade: 'A', desc: '未清潔乾淨', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '浴池青苔/髒汙', grade: 'A', desc: '內部/溢流區未刷', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '排水孔毛髮/異味', grade: 'A', desc: '堵塞/有垃圾', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '鏡面/玻璃水痕', grade: 'A', desc: '光照有明顯痕跡', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '地板濕滑/積水', grade: 'A', desc: '未擦乾', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '垃圾桶未清', grade: 'A', desc: '生理桶/垃圾桶有垃圾', color: 'border-red-900/20 bg-red-50 text-red-900' },
-    { label: '嚴重水垢堆積', grade: 'B', desc: '溢流牆/出水口', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
-    { label: '溫泉水質/溫度', grade: 'B', desc: '雜質/過高過低', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
-    { label: '高處/死角蜘蛛網', grade: 'B', desc: '九宮格窗/天花板', color: 'border-orange-900/20 bg-orange-50 text-orange-900' },
-    { label: '備品補充/復歸', grade: 'C', desc: '捲筒紙/毛巾摺法', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
-    { label: '五金水垢/皂垢', grade: 'C', desc: '水龍頭/洗手乳瓶底', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
-    { label: '設備歸位微調', grade: 'C', desc: '蓮蓬頭/木桶/水塞', color: 'border-yellow-900/20 bg-yellow-50 text-yellow-900' },
+    { label: '熱水壺/杯盤髒污', grade: 'A', desc: '水漬/茶垢/破損', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '馬桶汙垢/尿漬', grade: 'A', desc: '未清潔乾淨', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '浴池青苔/髒汙', grade: 'A', desc: '內部/溢流區未刷', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '排水孔毛髮/異味', grade: 'A', desc: '堵塞/有垃圾', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '鏡面/玻璃水痕', grade: 'A', desc: '光照有明顯痕跡', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '地板濕滑/積水', grade: 'A', desc: '未擦乾', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '垃圾桶未清', grade: 'A', desc: '生理桶/垃圾桶有垃圾', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
+    { label: '嚴重水垢堆積', grade: 'B', desc: '溢流牆/出水口', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
+    { label: '溫泉水質/溫度', grade: 'B', desc: '雜質/過高過低', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
+    { label: '高處/死角蜘蛛網', grade: 'B', desc: '九宮格窗/天花板', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
+    { label: '備品補充/復歸', grade: 'C', desc: '捲筒紙/毛巾摺法', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
+    { label: '五金水垢/皂垢', grade: 'C', desc: '水龍頭/洗手乳瓶底', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
+    { label: '設備歸位微調', grade: 'C', desc: '蓮蓬頭/木桶/水塞', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
   ]
 };
 
 const TEAMS_INFO = {
-  WATER: { id: 'water', name: '水組', icon: <Droplets size={20}/>, color: 'bg-[#4A6C6F] text-white', borderColor: 'border-[#4A6C6F]', issues: QUICK_ISSUES.WATER },
-  BED: { id: 'bed', name: '床組', icon: <Bed size={20}/>, color: 'bg-[#8B5E3C] text-white', borderColor: 'border-[#8B5E3C]', issues: QUICK_ISSUES.BED }
+  WATER: { id: 'water', name: '水組', Icon: Droplets, color: 'bg-[#4A6C6F] text-white', borderColor: 'border-[#4A6C6F]', issues: QUICK_ISSUES.WATER },
+  BED: { id: 'bed', name: '床組', Icon: Bed, color: 'bg-[#8B5E3C] text-white', borderColor: 'border-[#8B5E3C]', issues: QUICK_ISSUES.BED }
 };
 
 const ERROR_GRADES = {
@@ -167,6 +210,7 @@ export default function App() {
   const [view, setView] = useState('home'); 
   const [roomsData, setRoomsData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   // States
   const [selectedRoom, setSelectedRoom] = useState('');
@@ -175,6 +219,7 @@ export default function App() {
   const [waterStaff, setWaterStaff] = useState('');
   const [activeTab, setActiveTab] = useState('water');
   const [issues, setIssues] = useState([]);
+  const [editingRecordId, setEditingRecordId] = useState(null);
   
   // Modals
   const [showIssueModal, setShowIssueModal] = useState(false);
@@ -192,13 +237,25 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false); 
   const [newStaffName, setNewStaffName] = useState('');
   const [historyEditTarget, setHistoryEditTarget] = useState(null);
+  
+  // AI States
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiReport, setAiReport] = useState(null);
+  const [isReportLoading, setIsReportLoading] = useState(false);
 
   // --- Handlers ---
+  const resetForm = () => {
+    setSelectedRoom('');
+    setBedStaff('');
+    setWaterStaff('');
+    setIssues([]);
+    setEditingRecordId(null);
+  };
+
   const handleTagClick = (tag) => {
     setCurrentIssue(prev => {
         if (!prev.title) return { ...prev, title: tag };
-        return { ...prev, note: prev.note ? `${prev.note} ${tag}` : tag };
+        return { ...prev, note: prev.note ? `${prev.note}、${tag}` : tag };
     });
   };
 
@@ -212,7 +269,7 @@ export default function App() {
     if (!currentIssue.note) return;
     setIsAiLoading(true);
     try {
-      const prompt = `你是房務檢查員。改寫：${currentIssue.note}。回傳JSON: { "title": "...", "note": "...", "grade": "A"|"B"|"C" }`;
+      const prompt = `你是虹夕諾雅谷關房務員。改寫描述：${currentIssue.note}。JSON格式: { "title": "缺失標題", "note": "專業描述", "grade": "A"|"B"|"C" }`;
       const txt = await callGemini(prompt, true);
       if (txt) {
         const res = JSON.parse(txt);
@@ -224,6 +281,8 @@ export default function App() {
 
   const executeDelete = async () => {
     if (resetPwd !== '5656') { alert("密碼錯誤"); return; }
+    if (isDemoMode) { alert("預覽模式無法刪除"); setShowResetModal(false); return; }
+    
     setLoading(true);
     try {
       if (resetMode === 'all') {
@@ -245,27 +304,61 @@ export default function App() {
       else if (staffModalTarget === 'water') setWaterStaff(name);
       setShowStaffModal(false);
     } else {
+      if (isDemoMode) { alert("預覽模式無法更新"); setShowStaffModal(false); return; }
       try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'inspections', historyEditTarget.docId);
-        await updateDoc(docRef, { [historyEditTarget.type === 'bed' ? 'bedStaff' : 'waterStaff']: name });
+        const fieldToUpdate = historyEditTarget.type === 'bed' ? 'bedStaff' : 'waterStaff';
+        await updateDoc(docRef, { [fieldToUpdate]: name });
         setHistoryEditTarget(null); setShowStaffModal(false);
       } catch(e) { alert("更新失敗"); }
     }
   };
 
+  const startEditRecord = (record) => {
+    setSelectedRoom(record.roomId);
+    setInspectorName(record.inspector);
+    setBedStaff(record.bedStaff || '');
+    setWaterStaff(record.waterStaff || '');
+    setIssues(record.issues || []);
+    setEditingRecordId(record.id);
+    setView('inspect');
+  };
+
+  const openHistoryStaffEdit = (recordId, type) => {
+    setHistoryEditTarget({ docId: recordId, type });
+    setStaffModalTarget(type); 
+    setStaffSearch('');
+    setIsEditMode(false);
+    setShowStaffModal(true);
+  };
+
   const handleSubmitInspection = async () => {
     if (!selectedRoom || !inspectorName) return alert("請填寫房號與查房員");
+    if (isDemoMode) { 
+        alert("預覽模式：資料僅暫存。"); 
+        resetForm(); setView('home');
+        return; 
+    }
     const payload = {
       roomId: String(selectedRoom), inspector: String(inspectorName), 
       bedStaff: String(bedStaff || ''), waterStaff: String(waterStaff || ''), 
       issues: issues || [], issueCount: issues.length, hasGradeA: issues.some(i => i.grade === 'A'),
-      createdAt: serverTimestamp(), monthKey: new Date().toISOString().slice(0, 7)
+      monthKey: new Date().toISOString().slice(0, 7)
     };
+    if (!editingRecordId) {
+        payload.createdAt = serverTimestamp();
+    }
+
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'), payload);
-      setSelectedRoom(''); setBedStaff(''); setWaterStaff(''); setIssues([]); setView('home');
-      alert("提交成功!");
-    } catch (e) { alert("提交失敗"); }
+      if (editingRecordId) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inspections', editingRecordId), payload);
+        alert("修改成功!");
+      } else {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'), payload);
+        alert("提交成功!");
+      }
+      resetForm(); setView('home');
+    } catch (e) { alert("提交失敗"); console.error(e); }
   };
 
   const handleExportCSV = () => {
@@ -273,7 +366,7 @@ export default function App() {
     const headers = ["日期", "房號", "查房員", "床組", "水組", "缺失組別", "缺失項目", "等級", "備註"];
     const csvRows = [];
     roomsData.forEach(room => {
-      const date = room.createdAt?.seconds ? new Date(room.createdAt.seconds * 1000).toLocaleDateString('zh-TW') : '';
+      const date = room.createdAt?.seconds ? new Date(room.createdAt.seconds * 1000).toLocaleDateString('zh-TW') : 'Demo';
       if (!room.issues || room.issues.length === 0) {
         csvRows.push([date, room.roomId, room.inspector, room.bedStaff || '', room.waterStaff || '', "N/A", "PASS", "", ""]);
       } else {
@@ -288,13 +381,13 @@ export default function App() {
     });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob(["\uFEFF" + [headers.join(","), ...csvRows.map(r => r.join(","))].join("\n")], { type: "text/csv;charset=utf-8;" }));
-    link.download = `Hoshinoya_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `Hoshinoya_Inspection_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
   };
 
   // --- Auth & Data ---
   useEffect(() => {
-    signInAnonymously(auth);
+    signInAnonymously(auth).catch(() => setIsDemoMode(true));
     const saved = localStorage.getItem('lastInspector');
     if (saved) setInspectorName(saved);
     return onAuthStateChanged(auth, (u) => setUser(u));
@@ -307,6 +400,11 @@ export default function App() {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRoomsData(data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
       setLoading(false);
+      setIsDemoMode(false);
+    }, (error) => {
+      console.warn("Firestore access denied, switching to Demo Mode.");
+      setLoading(false); 
+      setIsDemoMode(true);
     });
   }, [user]);
 
@@ -314,14 +412,35 @@ export default function App() {
     const cur = new Date().toISOString().slice(0, 7);
     const filtered = roomsData.filter(r => r.monthKey === cur || !r.monthKey);
     const counts = filtered.flatMap(r => r.issues || []).reduce((acc, i) => { if(i.title) acc[i.title] = (acc[i.title] || 0) + 1; return acc; }, {});
-    return { count: filtered.length, total: filtered.reduce((a, c) => a + (c.issueCount || 0), 0), tops: Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 5) };
+    const topIssuesList = Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 5);
+    return { 
+      count: filtered.length, 
+      total: filtered.reduce((a, c) => a + (c.issueCount || 0), 0), 
+      tops: topIssuesList
+    };
   })();
+
+  const generateMonthlyReport = async () => {
+    setIsReportLoading(true);
+    try {
+      const topIssuesStr = stats.tops.map(([t, c]) => `${t}(${c}次)`).join(', ');
+      const prompt = `你是虹夕諾雅 谷關的房務經理。請根據以下本月數據，撰寫一份專業的【房務品質月報】，適合發布在員工群組。
+      - 本月檢查房數：${stats.count} 間
+      - 發現缺失總數：${stats.total} 項
+      - 前五大高頻缺失：${topIssuesStr || '無'}
+      請包含：📊本月概況、⚠️重點改善建議、💡溫馨提醒。使用繁體中文。`;
+      const report = await callGemini(prompt);
+      setAiReport(report);
+    } catch (e) { alert("報表生成失敗"); } finally { setIsReportLoading(false); }
+  };
 
   if (loading) return <LoadingSpinner />;
 
   return (
     <div className="bg-[#E0E0E0] min-h-screen font-sans text-[#2C2C2C] md:max-w-md md:mx-auto md:shadow-2xl md:relative h-screen overflow-hidden">
       <div className="h-full bg-[#F5F5F0]">
+        {isDemoMode && <div className="bg-amber-100 text-amber-800 text-xs text-center py-1 absolute top-0 w-full z-50 flex justify-center items-center gap-2"><CloudOff size={12}/> 預覽模式 (資料僅暫存)</div>}
+
         {view === 'home' && (
           <div className="flex flex-col h-full">
             <div className="bg-[#2C2C2C] text-white p-8 pt-14 pb-12 rounded-b-[40px] shadow-2xl text-center">
@@ -329,7 +448,7 @@ export default function App() {
               <p className="text-[#888] text-xs tracking-[0.3em] uppercase">Guguan Housekeeping</p>
             </div>
             <div className="flex-1 px-6 py-8 space-y-5 -mt-6 font-sans">
-              <button onClick={() => setView('inspect')} className="w-full bg-white p-6 rounded-2xl shadow-xl border border-white/50 flex items-center justify-between active:scale-95 transition-all">
+              <button onClick={() => { resetForm(); setView('inspect'); }} className="w-full bg-white p-6 rounded-2xl shadow-xl border border-white/50 flex items-center justify-between active:scale-95 transition-all">
                 <div className="flex items-center gap-5"><div className="bg-[#2C2C2C] text-white p-4 rounded-full"><CheckCircle size={28} /></div><div className="text-left"><h3 className="text-xl font-serif font-medium">開始查房</h3><p className="text-[#888] text-xs mt-1">Start Inspection</p></div></div><ChevronRight size={20} className="text-[#CCC]" />
               </button>
               <div className="grid grid-cols-2 gap-4">
@@ -343,8 +462,8 @@ export default function App() {
         {view === 'inspect' && (
           <div className="flex flex-col h-full bg-[#F5F5F0]">
             <div className="bg-white px-6 py-6 shadow-md flex flex-col items-center sticky top-0 z-20 border-b border-gray-100 font-sans">
-              <div className="w-full flex justify-between items-center mb-2"><button onClick={() => setView('home')} className="p-2 -ml-2 text-[#555]"><X size={24} /></button><span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">Checking Room</span><div className="w-10"></div></div>
-              <button onClick={() => setShowRoomModal(true)} className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}><Grid size={22} /><span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '選擇房號'}</span><ChevronDown size={20} /></button>
+              <div className="w-full flex justify-between items-center mb-2"><button onClick={() => { setView('home'); resetForm(); }} className="p-2 -ml-2 text-[#555]"><X size={24} /></button><span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">{editingRecordId ? 'Editing Record' : 'Checking Room'}</span><div className="w-10"></div></div>
+              <button onClick={() => setShowRoomModal(true)} className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}><Grid size={22} /><span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '房號'}</span><ChevronDown size={20} /></button>
             </div>
             <div className="flex-1 overflow-y-auto pb-32 p-5 space-y-6">
               <div className="grid grid-cols-3 gap-3 font-sans">
@@ -354,12 +473,21 @@ export default function App() {
               </div>
               <div className="bg-white p-1 rounded-2xl shadow-sm border flex font-sans">
                 {Object.values(TEAMS_INFO).map(t => (
-                  <button key={t.id} onClick={() => setActiveTab(t.id.toLowerCase())} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${activeTab === t.id.toLowerCase() ? t.color : 'text-[#999]'}`}>{t.icon}<span>{String(t.name)}</span></button>
+                  <button key={t.id} onClick={() => setActiveTab(t.id.toLowerCase())} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${activeTab === t.id.toLowerCase() ? t.color : 'text-[#999]'}`}>
+                    <t.Icon size={20} />
+                    <span>{String(t.name)}</span>
+                  </button>
                 ))}
               </div>
               <div className="grid grid-cols-2 gap-3 font-sans">
                 {TEAMS_INFO[activeTab.toUpperCase()].issues.map((i, idx) => (
-                  <button key={idx} onClick={() => { setCurrentIssue({ team: activeTab, title: i.label, grade: i.grade, note: '', photo: null, isCustom: false }); setShowIssueModal(true); }} className={`p-4 rounded-xl border text-left bg-white shadow-sm active:scale-95 ${i.color} border-transparent`}><div className="font-bold text-lg mb-1">{i.label}</div><div className="flex justify-between items-end"><span className="text-sm text-[#666] leading-tight w-2/3">{i.desc}</span><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${ERROR_GRADES[i.grade]?.badge}`}>{i.grade}</span></div></button>
+                  <button key={idx} onClick={() => { setCurrentIssue({ team: activeTab, title: i.label, grade: i.grade, note: '', photo: null, isCustom: false }); setShowIssueModal(true); }} className={`p-4 rounded-xl border text-left bg-white shadow-sm active:scale-95 ${i.color} border-transparent`}>
+                    <div className="font-bold text-lg mb-1">{i.label}</div>
+                    <div className="flex justify-between items-end">
+                      <span className="text-sm text-[#444] font-medium leading-tight w-2/3">{i.desc}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${ERROR_GRADES[i.grade]?.badge}`}>{i.grade}</span>
+                    </div>
+                  </button>
                 ))}
                 <button onClick={() => { setCurrentIssue({ team: activeTab, title: '', grade: 'C', note: '', photo: null, isCustom: true }); setShowIssueModal(true); }} className="p-4 rounded-xl border-2 border-dashed border-[#DDD] flex flex-col items-center justify-center text-[#999] active:scale-95"><Plus size={24} /><span className="text-sm font-bold mt-1">自定義缺失</span></button>
               </div>
@@ -372,7 +500,7 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-5 border-t z-30 font-sans"><button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 active:scale-95"><Save size={20} />提交紀錄</button></div>
+            <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md p-5 border-t z-30 font-sans"><button onClick={handleSubmitInspection} className="w-full bg-[#2C2C2C] text-white py-4 rounded-xl font-serif font-bold text-lg shadow-lg flex items-center justify-center gap-3 active:scale-95"><Save size={20} />{editingRecordId ? '確認修改' : '提交紀錄'}</button></div>
           </div>
         )}
 
@@ -382,16 +510,19 @@ export default function App() {
             <div className="p-6 space-y-4 overflow-y-auto pb-20 font-sans">
               {roomsData.map(r => (
                 <div key={r.id} className="bg-white p-5 rounded-2xl shadow-sm border relative active:scale-[0.98]">
-                  <div className="absolute top-5 right-5"><button onClick={(e) => { e.stopPropagation(); setTargetDeleteId(r.id); setResetMode('single'); setShowResetModal(true); }} className="p-2 text-[#DDD] hover:text-red-500 transition-colors"><Trash2 size={16}/></button></div>
+                  <div className="absolute top-5 right-5 flex gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); startEditRecord(r); }} className="p-2 text-[#DDD] hover:text-blue-500 transition-colors"><PenSquare size={16}/></button>
+                    <button onClick={(e) => { e.stopPropagation(); setTargetDeleteId(r.id); setResetMode('single'); setShowResetModal(true); }} className="p-2 text-[#DDD] hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
+                  </div>
                   <div onClick={() => setSelectedHistoryItem(r)} className="cursor-pointer">
-                    <div className="flex justify-between items-start mb-3 pr-8 font-sans"><div><h3 className="text-2xl font-serif">{r.roomId} 房</h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : '-'}</span></div>{r.hasGradeA ? <span className="bg-red-50 text-red-800 text-[10px] font-bold px-2 py-1 rounded border border-red-200 uppercase">A級異常</span> : <span className="bg-green-50 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200 uppercase">PASS</span>}</div>
+                    <div className="flex justify-between items-start mb-3 pr-20 font-sans"><div><h3 className="text-2xl font-serif">{r.roomId} 房</h3><span className="text-xs text-[#999]">{r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toLocaleDateString() : 'Demo'}</span></div>{r.hasGradeA ? <span className="bg-red-50 text-red-800 text-[10px] font-bold px-2 py-1 rounded border border-red-200 uppercase">A級異常</span> : <span className="bg-green-50 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200 uppercase">PASS</span>}</div>
                   </div>
                   <div className="text-xs p-3 bg-[#F9F9F9] rounded-xl flex justify-between items-center text-[#666] gap-1 font-sans">
                     <span className="font-medium whitespace-nowrap">查: {r.inspector}</span>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={(e) => { e.stopPropagation(); openHistoryStaffEdit(r.id, 'water'); }} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">水: {r.waterStaff || '補填'}</button>
+                    <button onClick={(e) => { e.stopPropagation(); openHistoryStaffEdit(r.id, 'water'); }} className={`flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all`}>水: {r.waterStaff || '補填'}</button>
                     <div className="h-4 w-[1px] bg-[#DDD]"></div>
-                    <button onClick={(e) => { e.stopPropagation(); openHistoryStaffEdit(r.id, 'bed'); }} className="flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all">床: {r.bedStaff || '補填'}</button>
+                    <button onClick={(e) => { e.stopPropagation(); openHistoryStaffEdit(r.id, 'bed'); }} className={`flex-1 py-1 px-1 rounded hover:bg-white hover:shadow-sm text-indigo-600 font-bold transition-all`}>床: {r.bedStaff || '補填'}</button>
                   </div>
                   {(r.issues || []).length > 0 && <div className="mt-2 flex flex-wrap gap-1 font-sans">{r.issues.slice(0, 3).map((i, idx) => <span key={idx} className="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-[#888]">{i.title}</span>)}{r.issues.length > 3 && <span className="text-[9px] text-[#BBB]">+{r.issues.length - 3}</span>}</div>}
                 </div>
@@ -410,12 +541,25 @@ export default function App() {
                     <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col"><p className="text-xs text-[#888] font-bold uppercase tracking-widest flex items-center gap-1"><AlertTriangle size={12}/> 缺失總計</p><p className="text-4xl font-serif text-[#8B3A3A] mt-2 font-bold">{stats.total}</p></div>
                 </div>
                 <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                    <h3 className="font-serif font-bold text-lg mb-5 flex items-center gap-2"><BarChart2 size={20} className="text-[#8B5E3C]" /> 本月缺失排行</h3>
+                    <div className="flex justify-between items-center mb-5"><h3 className="font-serif font-bold text-lg flex items-center gap-2"><BarChart2 size={20} className="text-[#8B5E3C]" /> 本月缺失排行</h3></div>
                     <div className="space-y-5">
                         {stats.tops.map(([t, c], i) => (
                             <div key={t} className="flex justify-between items-center font-sans"><div className="flex items-center gap-4 flex-1 min-w-0"><div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-[#8B3A3A] text-white shadow-sm' : 'bg-gray-100 text-gray-400'}`}>{i + 1}</div><span className="font-medium text-sm text-[#444] truncate">{t}</span></div><span className="font-bold text-sm text-[#2C2C2C]">{c} 次</span></div>
                         ))}
                     </div>
+                </div>
+                <div className="bg-gradient-to-br from-[#2C2C2C] to-[#444] p-6 rounded-2xl shadow-lg text-white">
+                  <div className="flex items-start justify-between mb-4"><div><h3 className="font-serif font-bold text-lg flex items-center gap-2"><Sparkles size={18} className="text-yellow-400"/> AI 智能月報</h3><p className="text-xs text-gray-400 mt-1">一鍵生成專業房務分析報告</p></div></div>
+                  {aiReport ? (
+                    <div className="bg-white/10 rounded-xl p-4 text-sm leading-relaxed whitespace-pre-line border border-white/20 animate-in fade-in">
+                      {aiReport}
+                      <button onClick={() => setAiReport(null)} className="mt-4 w-full py-2 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors">關閉報告</button>
+                    </div>
+                  ) : (
+                    <button onClick={generateMonthlyReport} disabled={isReportLoading} className="w-full py-3 bg-white text-[#2C2C2C] rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-all hover:bg-gray-100 disabled:opacity-70">
+                      {isReportLoading ? <Loader2 className="animate-spin" size={16}/> : <MessageSquareQuote size={16}/>}{isReportLoading ? 'AI 正在撰寫中...' : '生成本月分析報告'}
+                    </button>
+                  )}
                 </div>
             </div>
           </div>
@@ -452,15 +596,20 @@ export default function App() {
             <div><label className="text-[10px] text-[#888] font-bold uppercase mb-2 block tracking-widest font-sans uppercase">Severity Grade</label>
               <div className="flex gap-2">
                 {Object.entries(ERROR_GRADES).map(([k, v]) => (
-                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-3 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}><span className="text-xs font-bold font-sans">{String(v.label)}</span><span className="text-[8px] font-medium opacity-70 uppercase tracking-tighter">{v.subLabel}</span></button>
+                  <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-4 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}>
+                    <span className="text-sm font-bold font-sans">{String(v.label)}</span>
+                    <span className="text-xs font-normal opacity-90">{v.subLabel}</span>
+                  </button>
                 ))}
               </div>
             </div>
-            {currentIssue.isCustom && (
-              <div className="flex flex-wrap gap-2 font-sans">
-                {COMMON_TAGS.map(t => (<button key={t} onClick={() => handleTagClick(t)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-[#555] active:bg-[#F5F5F0] transition-colors">{t}</button>))}
-              </div>
-            )}
+            {/* 情境式懶人標籤 */}
+            <div className="flex flex-wrap gap-2 font-sans mt-2">
+              <label className="text-[10px] text-[#888] font-bold uppercase block tracking-widest font-sans uppercase w-full">Quick Tags</label>
+              {(ISSUE_SPECIFIC_TAGS[currentIssue.title] || COMMON_TAGS).map(t => (
+                <button key={t} onClick={() => handleTagClick(t)} className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-[#555] active:bg-[#F5F5F0] transition-colors">{t}</button>
+              ))}
+            </div>
             <div className="relative font-sans"><textarea className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm h-32 outline-none resize-none" placeholder="描述狀況..." value={currentIssue.note} onChange={e => setCurrentIssue({...currentIssue, note: e.target.value})} /><button onClick={handleAiRefine} disabled={isAiLoading} className="absolute bottom-3 right-3 p-2 bg-black text-white rounded-lg active:scale-95">{isAiLoading ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>}</button></div>
             <div className="flex gap-2 font-sans">
               <label className="flex-1 bg-white border-2 border-dashed border-[#DDD] rounded-xl py-4 flex flex-col items-center justify-center cursor-pointer h-24 overflow-hidden relative active:bg-gray-50 transition-colors">
