@@ -36,9 +36,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// 權限修正：使用環境提供的 App ID 並進行消毒，若無則使用固定 ID
-const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'hoshinoya-guguan-production-v4';
-const appId = rawAppId.replace(/[^a-zA-Z0-9_]/g, '_');
+const appId = 'hoshinoya-guguan-production-v4';
 
 // --- Gemini API ---
 const callGemini = async (prompt, isJson = false) => {
@@ -90,9 +88,7 @@ const INITIAL_STAFF = [
 
 const COMMON_TAGS = ["毛髮", "灰塵", "水漬", "指紋", "垃圾", "破損", "異味", "雜音", "未補", "未歸位", "皺摺", "過期", "歪斜", "皂垢", "生鏽"];
 
-// --- 修正：補回遺失的標籤庫 ---
 const ISSUE_SPECIFIC_TAGS = {
-  // Bed Team
   '遺留物/垃圾': ['衛生紙', '塑膠袋', '發票', '衣物', '私人保養品', '口罩', '食物殘渣', '鞋子'],
   '毛髮/碎屑/蟲屍': ['長髮', '短髮', '捲毛', '體毛', '灰塵', '棉絮', '餅乾屑', '死蒼蠅', '螞蟻', '蜘蛛'],
   '備品未補/全空': ['拖鞋', '洗衣袋', '手提袋', '信紙', '筆', '礦泉水', '茶包', '咖啡濾掛', '糖包', '奶精'],
@@ -106,8 +102,6 @@ const ISSUE_SPECIFIC_TAGS = {
   '枕頭/抱枕擺放': ['方向錯誤', '正反面顛倒', '拉鍊外露', '排列不整齊', '未拍蓬'],
   '空調/燈光未重置': ['溫度設定錯誤', '風量錯誤', '模式錯誤', '夜燈未開', '主燈未關', '玄關燈未開'],
   '衛生紙/備品微調': ['衛生紙未折角', '未補滿', '擺放歪斜', '有水漬', '備品盤凌亂'],
-
-  // Water Team
   '熱水壺/杯盤髒污': ['內部水垢', '外部指紋', '底座水漬', '杯緣口紅印', '茶垢', '破損'],
   '馬桶汙垢/尿漬': ['尿漬', '黃垢', '毛髮', '水漬', '異味', '消毒封條未貼', '蓋子未蓋'],
   '浴池青苔/髒汙': ['青苔', '底部沙子', '邊緣滑膩', '樹葉', '水垢', '毛髮', '出水口髒污'],
@@ -162,9 +156,24 @@ const TEAMS_INFO = {
 };
 
 const ERROR_GRADES = {
-  A: { label: 'A級 (嚴重)', subLabel: '客訴風險', color: 'bg-[#8B3A3A] text-white', badge: 'bg-red-100 text-red-800' },
-  B: { label: 'B級 (中等)', subLabel: '品質缺失', color: 'bg-[#D97706] text-white', badge: 'bg-orange-100 text-orange-800' },
-  C: { label: 'C級 (輕微)', subLabel: '細節微調', color: 'bg-[#B45309] text-white', badge: 'bg-yellow-100 text-yellow-800' },
+  A: { 
+    label: 'A級 (嚴重)', 
+    subLabel: '客訴風險', 
+    color: 'bg-red-700 text-white shadow-md shadow-red-900/30 ring-2 ring-red-800', 
+    badge: 'bg-red-600 text-white border-transparent' 
+  },
+  B: { 
+    label: 'B級 (中等)', 
+    subLabel: '品質缺失', 
+    color: 'bg-orange-500 text-white shadow-md shadow-orange-900/30 ring-2 ring-orange-600', 
+    badge: 'bg-orange-500 text-white border-transparent' 
+  },
+  C: { 
+    label: 'C級 (輕微)', 
+    subLabel: '細節微調', 
+    color: 'bg-yellow-500 text-white shadow-md shadow-yellow-900/30 ring-2 ring-yellow-600', 
+    badge: 'bg-yellow-500 text-white border-yellow-600' 
+  },
 };
 
 // --- Helpers ---
@@ -269,7 +278,7 @@ export default function App() {
     if (!currentIssue.note) return;
     setIsAiLoading(true);
     try {
-      const prompt = `你是虹夕諾雅谷關房務員。改寫描述：${currentIssue.note}。JSON格式: { "title": "缺失標題", "note": "專業描述", "grade": "A"|"B"|"C" }`;
+      const prompt = `你是房務檢查員。改寫筆記為專業描述並判斷等級。筆記：${currentIssue.note}。回傳JSON: { "title": "...", "note": "...", "grade": "A"|"B"|"C" }`;
       const txt = await callGemini(prompt, true);
       if (txt) {
         const res = JSON.parse(txt);
@@ -282,7 +291,6 @@ export default function App() {
   const executeDelete = async () => {
     if (resetPwd !== '5656') { alert("密碼錯誤"); return; }
     if (isDemoMode) { alert("預覽模式無法刪除"); setShowResetModal(false); return; }
-    
     setLoading(true);
     try {
       if (resetMode === 'all') {
@@ -307,8 +315,7 @@ export default function App() {
       if (isDemoMode) { alert("預覽模式無法更新"); setShowStaffModal(false); return; }
       try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'inspections', historyEditTarget.docId);
-        const fieldToUpdate = historyEditTarget.type === 'bed' ? 'bedStaff' : 'waterStaff';
-        await updateDoc(docRef, { [fieldToUpdate]: name });
+        await updateDoc(docRef, { [historyEditTarget.type === 'bed' ? 'bedStaff' : 'waterStaff']: name });
         setHistoryEditTarget(null); setShowStaffModal(false);
       } catch(e) { alert("更新失敗"); }
     }
@@ -345,9 +352,7 @@ export default function App() {
       issues: issues || [], issueCount: issues.length, hasGradeA: issues.some(i => i.grade === 'A'),
       monthKey: new Date().toISOString().slice(0, 7)
     };
-    if (!editingRecordId) {
-        payload.createdAt = serverTimestamp();
-    }
+    if (!editingRecordId) { payload.createdAt = serverTimestamp(); }
 
     try {
       if (editingRecordId) {
@@ -462,7 +467,7 @@ export default function App() {
         {view === 'inspect' && (
           <div className="flex flex-col h-full bg-[#F5F5F0]">
             <div className="bg-white px-6 py-6 shadow-md flex flex-col items-center sticky top-0 z-20 border-b border-gray-100 font-sans">
-              <div className="w-full flex justify-between items-center mb-2"><button onClick={() => { setView('home'); resetForm(); }} className="p-2 -ml-2 text-[#555]"><X size={24} /></button><span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">{editingRecordId ? 'Editing Record' : 'Checking Room'}</span><div className="w-10"></div></div>
+              <div className="w-full flex justify-between items-center mb-2"><button onClick={() => { setView('home'); resetForm(); }} className="p-2 -ml-2 text-[#555]"><X size={24} /></button><span className="text-[10px] font-bold text-[#888] tracking-[0.2em] uppercase font-serif">{editingRecordId ? '編輯模式' : '開始查房'}</span><div className="w-10"></div></div>
               <button onClick={() => setShowRoomModal(true)} className={`w-full max-w-[220px] py-4 px-6 rounded-2xl flex items-center justify-center gap-4 active:scale-95 ${selectedRoom ? 'bg-[#2C2C2C] text-white shadow-xl ring-4 ring-[#2C2C2C]/5' : 'bg-gray-100 text-[#2C2C2C] border-2 border-dashed border-gray-300'}`}><Grid size={22} /><span className="text-3xl font-serif font-bold tracking-widest">{selectedRoom || '房號'}</span><ChevronDown size={20} /></button>
             </div>
             <div className="flex-1 overflow-y-auto pb-32 p-5 space-y-6">
@@ -599,6 +604,7 @@ export default function App() {
                   <button key={k} onClick={() => setCurrentIssue({...currentIssue, grade: k})} className={`flex-1 py-4 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentIssue.grade === k ? v.color : 'bg-white text-[#888]'}`}>
                     <span className="text-sm font-bold font-sans">{String(v.label)}</span>
                     <span className="text-xs font-normal opacity-90">{v.subLabel}</span>
+                    {v.icon}
                   </button>
                 ))}
               </div>
