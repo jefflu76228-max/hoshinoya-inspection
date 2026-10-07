@@ -253,15 +253,15 @@ export default function App() {
   const [resetPwd, setResetPwd] = useState('');
   const [resetMode, setResetMode] = useState('all'); 
   const [targetDeleteId, setTargetDeleteId] = useState(null);
-  
-  // Staff Modal & Custom Staff List
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [staffModalTarget, setStaffModalTarget] = useState(null); 
   const [staffSearch, setStaffSearch] = useState('');
   const [isEditMode, setIsEditMode] = useState(false); 
   const [newStaffName, setNewStaffName] = useState('');
   const [historyEditTarget, setHistoryEditTarget] = useState(null);
-  const [customStaffList, setCustomStaffList] = useState([]); // 從 Firebase 讀取的自訂名單
+  
+  // Custom Staff List from Firebase
+  const [customStaffList, setCustomStaffList] = useState({ bed: [], water: [] });
   
   // AI States
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -337,32 +337,20 @@ export default function App() {
     }
   };
 
-  // 新增人員
-  const handleAddCustomStaff = async () => {
-    if (!newStaffName.trim()) return;
-    if (isDemoMode) return alert("預覽模式無法新增名單至資料庫");
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list');
-      await setDoc(docRef, { customList: arrayUnion(newStaffName.trim()) }, { merge: true });
-      setNewStaffName('');
-      alert('新增成功');
-    } catch (e) { 
-      console.error(e); 
-      alert("新增失敗"); 
-    }
-  };
-
-  // 刪除自訂人員
-  const handleRemoveCustomStaff = async (e, nameToRemove) => {
-    e.stopPropagation(); // 避免觸發選擇人員
-    if (!window.confirm(`確定要從系統中移除「${nameToRemove}」嗎？`)) return;
+  // 刪除自定義人員功能
+  const handleDeleteCustomStaff = async (nameToDelete) => {
     if (isDemoMode) return alert("預覽模式無法刪除名單");
+    if (!confirm(`確定要刪除「${nameToDelete}」嗎？這不會影響已儲存的歷史紀錄。`)) return;
+    
     try {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list');
-      await updateDoc(docRef, { customList: arrayRemove(nameToRemove) });
-    } catch (e) { 
-      console.error(e); 
-      alert("刪除失敗"); 
+      await updateDoc(docRef, { 
+        bed: arrayRemove(nameToDelete), 
+        water: arrayRemove(nameToDelete) 
+      });
+    } catch (e) {
+      console.error(e);
+      alert("刪除失敗");
     }
   };
 
@@ -435,7 +423,7 @@ export default function App() {
     link.click();
   };
 
-  // --- Auth & Data ---
+  // --- Auth & Data Fetching ---
   useEffect(() => {
     signInAnonymously(auth).catch(() => setIsDemoMode(true));
     const saved = localStorage.getItem('lastInspector');
@@ -459,15 +447,19 @@ export default function App() {
     });
   }, [user]);
 
-  // 監聽自訂人員名單
+  // 監聽自定義人員名單
   useEffect(() => {
     if (!user) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list');
     return onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists() && docSnap.data().customList) {
-        setCustomStaffList(docSnap.data().customList);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCustomStaffList({
+          bed: data.bed || [],
+          water: data.water || []
+        });
       }
-    }, (error) => console.log("Staff list read failed", error));
+    }, console.error);
   }, [user]);
 
   const stats = (() => {
@@ -496,10 +488,12 @@ export default function App() {
     } catch (e) { alert("報表生成失敗"); } finally { setIsReportLoading(false); }
   };
 
-  // 取得最終顯示的人員名單 (內建 + 自訂)
+  // 取得合併後、排序過、去重複的人員名單
   const getMergedStaffList = () => {
-    const combined = Array.from(new Set([...INITIAL_STAFF, ...customStaffList]));
-    return combined.sort((a, b) => a.localeCompare(b, 'zh-TW'));
+    const customStaff = staffModalTarget === 'bed' ? customStaffList.bed : customStaffList.water;
+    return Array.from(new Set([...INITIAL_STAFF, ...customStaff]))
+      .filter(n => n.includes(staffSearch))
+      .sort((a, b) => a.localeCompare(b, 'zh-TW'));
   };
 
   if (loading) return <LoadingSpinner />;
@@ -705,44 +699,20 @@ export default function App() {
       {showStaffModal && (
         <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
           <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
-            <div className="p-5 border-b flex justify-between items-center bg-white font-serif">
-              <h3 className="font-bold tracking-widest">{historyEditTarget ? '修正人員' : '選擇人員'}</h3>
-              <button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null); setIsEditMode(false);}} className="p-2"><X size={24}/></button>
-            </div>
-            
-            <div className="p-4 flex gap-2 bg-white">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-3 text-[#BBB]" size={18} />
-                <input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm font-sans" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} />
-              </div>
-              <button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-all ${isEditMode ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-[#F0F0F0]'}`}>
-                <Edit2 size={18}/>
-              </button>
-            </div>
-            
-            {isEditMode && (
-              <div className="px-4 py-4 flex gap-2 animate-in slide-in-from-top-2 bg-white border-b border-gray-100">
-                <input className="flex-1 border border-gray-300 p-3 rounded-xl text-sm font-sans focus:border-black outline-none" placeholder="輸入要新增的人員姓名..." value={newStaffName} onChange={e => setNewStaffName(e.target.value)} />
-                <button onClick={handleAddCustomStaff} className="bg-black text-white px-5 rounded-xl text-xs font-bold uppercase tracking-widest active:scale-95 transition-transform">加入</button>
-              </div>
-            )}
-            
+            <div className="p-5 border-b flex justify-between items-center bg-white font-serif"><h3 className="font-bold tracking-widest">{historyEditTarget ? '修正人員' : '選擇人員'}</h3><button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null);}} className="p-2"><X size={24}/></button></div>
+            <div className="p-4 flex gap-2 bg-white"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm font-sans" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-all ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0]'}`}><Edit2 size={18}/></button></div>
+            {isEditMode && (<div className="px-4 py-4 flex gap-2 animate-in slide-in-from-top-2 bg-white"><input className="flex-1 border border-gray-200 p-3 rounded-xl text-sm font-sans" placeholder="新增姓名..." value={newStaffName} onChange={e => setNewStaffName(e.target.value)} /><button onClick={async () => { if (!newStaffName.trim()) return; const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list'); await updateDoc(docRef, { bed: arrayUnion(newStaffName.trim()), water: arrayUnion(newStaffName.trim()) }); setNewStaffName(''); }} className="bg-black text-white px-4 rounded-xl text-xs font-bold uppercase font-sans">ADD</button></div>)}
             <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">
-              {getMergedStaffList().filter(n => n.includes(staffSearch)).map(n => {
-                const isCustom = customStaffList.includes(n);
-                return (
-                  <div key={n} className="relative">
-                    <button onClick={() => !isEditMode && selectStaff(n)} disabled={isEditMode} className={`w-full py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm transition-all border font-sans ${isEditMode ? 'border-gray-200 opacity-60' : 'border-transparent active:scale-95 hover:border-indigo-200'}`}>
-                      {n}
+              {getMergedStaffList().map(n => (
+                <div key={n} className="relative group">
+                  <button onClick={() => !isEditMode && selectStaff(n)} className="w-full py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm active:scale-95 transition-all border border-transparent hover:border-indigo-200 font-sans">{n}</button>
+                  {isEditMode && !INITIAL_STAFF.includes(n) && (
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteCustomStaff(n); }} className="absolute -top-2 -right-2 bg-red-50 text-red-500 rounded-full p-1 shadow-sm hover:scale-110 transition-transform">
+                      <MinusCircle size={16}/>
                     </button>
-                    {isEditMode && isCustom && (
-                      <button onClick={(e) => handleRemoveCustomStaff(e, n)} className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:scale-110 transition-transform">
-                        <MinusCircle size={14} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
