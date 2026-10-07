@@ -19,15 +19,30 @@ const getEnvVar = (key) => {
   try { return import.meta.env[key]; } catch (e) { return undefined; }
 };
 
-let firebaseConfig = {};
-let apiKey = "";
+// 1. 這裡直接寫入你的 Firebase 設定
+let firebaseConfig = {
+  apiKey: "AIzaSyAAN5u8Deq2J3O8FG9H5m40125fnZq8kSE",
+  authDomain: "hoshinoya-guguan-inspection.firebaseapp.com",
+  projectId: "hoshinoya-guguan-inspection",
+  storageBucket: "hoshinoya-guguan-inspection.firebasestorage.app",
+  messagingSenderId: "870158796881",
+  appId: "1:870158796881:web:33f34ba77112c6f3d59070",
+  measurementId: "G-XBZN1CJVMD"
+};
+
+// 2. 這裡直接寫入你的 Gemini API Key
+let apiKey = "AQ.Ab8RN6Ju0ShmSEHDm2ARnhd59IJdcDRp22EIUbeEGfWnqb4xeQ";
 
 if (typeof __firebase_config !== 'undefined') {
   try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) {}
 } else {
   const rawConfig = getEnvVar('VITE_FIREBASE_CONFIG');
   if (rawConfig) {
-    try { firebaseConfig = JSON.parse(rawConfig); apiKey = getEnvVar('VITE_GEMINI_KEY'); } catch (e) {}
+    try { 
+      firebaseConfig = JSON.parse(rawConfig); 
+      const envKey = getEnvVar('VITE_GEMINI_KEY');
+      if (envKey) apiKey = envKey;
+    } catch (e) {}
   }
 }
 
@@ -143,7 +158,7 @@ const QUICK_ISSUES = {
     { label: '垃圾桶未清', grade: 'A', desc: '生理桶/垃圾桶有垃圾', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
     { label: '嚴重水垢堆積', grade: 'B', desc: '溢流牆/出水口', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
     { label: '溫泉水質/溫度', grade: 'B', desc: '雜質/過高過低', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
-    { label: '高處/死角蜘蛛網', grade: 'B', desc: '九宮格窗/天花板', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
+    { label: '高處/死角蜘蛛網', grade: 'B', desc: '九宫格窗/天花板', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
     { label: '備品補充/復歸', grade: 'C', desc: '捲筒紙/毛巾摺法', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
     { label: '五金水垢/皂垢', grade: 'C', desc: '水龍頭/洗手乳瓶底', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
     { label: '設備歸位微調', grade: 'C', desc: '蓮蓬頭/木桶/水塞', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
