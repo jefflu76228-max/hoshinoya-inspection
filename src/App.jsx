@@ -11,7 +11,7 @@ import {
   Droplets, Bed, History, FileText, Tag, Plus,
   AlertOctagon, AlertCircle, Info, ThumbsUp, Users, Search,
   Edit2, Trash2, UserPlus, Sparkles, Loader2, FileJson, Download, PenTool,
-  MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, Grid, CloudOff, PenSquare, MessageSquareQuote
+  MapPin, Clock, HelpCircle, Eye, Image as ImageIcon, Lock, Grid, CloudOff, PenSquare, MessageSquareQuote, MinusCircle
 } from 'lucide-react';
 
 // --- Configuration Handling ---
@@ -19,7 +19,6 @@ const getEnvVar = (key) => {
   try { return import.meta.env[key]; } catch (e) { return undefined; }
 };
 
-// 1. 這裡直接寫入你的 Firebase 設定
 let firebaseConfig = {
   apiKey: "AIzaSyAAN5u8Deq2J3O8FG9H5m40125fnZq8kSE",
   authDomain: "hoshinoya-guguan-inspection.firebaseapp.com",
@@ -30,7 +29,6 @@ let firebaseConfig = {
   measurementId: "G-XBZN1CJVMD"
 };
 
-// 2. 這裡直接寫入你的 Gemini API Key
 let apiKey = "AQ.Ab8RN6Ju0ShmSEHDm2ARnhd59IJdcDRp22EIUbeEGfWnqb4xeQ";
 
 if (typeof __firebase_config !== 'undefined') {
@@ -158,7 +156,7 @@ const QUICK_ISSUES = {
     { label: '垃圾桶未清', grade: 'A', desc: '生理桶/垃圾桶有垃圾', color: 'border-red-600 bg-red-50 text-red-900 border-l-4' },
     { label: '嚴重水垢堆積', grade: 'B', desc: '溢流牆/出水口', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
     { label: '溫泉水質/溫度', grade: 'B', desc: '雜質/過高過低', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
-    { label: '高處/死角蜘蛛網', grade: 'B', desc: '九宫格窗/天花板', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
+    { label: '高處/死角蜘蛛網', grade: 'B', desc: '九宮格窗/天花板', color: 'border-orange-500 bg-orange-50 text-orange-900 border-l-4' },
     { label: '備品補充/復歸', grade: 'C', desc: '捲筒紙/毛巾摺法', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
     { label: '五金水垢/皂垢', grade: 'C', desc: '水龍頭/洗手乳瓶底', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
     { label: '設備歸位微調', grade: 'C', desc: '蓮蓬頭/木桶/水塞', color: 'border-yellow-500 bg-yellow-50 text-yellow-900 border-l-4' },
@@ -255,12 +253,15 @@ export default function App() {
   const [resetPwd, setResetPwd] = useState('');
   const [resetMode, setResetMode] = useState('all'); 
   const [targetDeleteId, setTargetDeleteId] = useState(null);
+  
+  // Staff Modal & Custom Staff List
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [staffModalTarget, setStaffModalTarget] = useState(null); 
   const [staffSearch, setStaffSearch] = useState('');
   const [isEditMode, setIsEditMode] = useState(false); 
   const [newStaffName, setNewStaffName] = useState('');
   const [historyEditTarget, setHistoryEditTarget] = useState(null);
+  const [customStaffList, setCustomStaffList] = useState([]); // 從 Firebase 讀取的自訂名單
   
   // AI States
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -333,6 +334,35 @@ export default function App() {
         await updateDoc(docRef, { [historyEditTarget.type === 'bed' ? 'bedStaff' : 'waterStaff']: name });
         setHistoryEditTarget(null); setShowStaffModal(false);
       } catch(e) { alert("更新失敗"); }
+    }
+  };
+
+  // 新增人員
+  const handleAddCustomStaff = async () => {
+    if (!newStaffName.trim()) return;
+    if (isDemoMode) return alert("預覽模式無法新增名單至資料庫");
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list');
+      await setDoc(docRef, { customList: arrayUnion(newStaffName.trim()) }, { merge: true });
+      setNewStaffName('');
+      alert('新增成功');
+    } catch (e) { 
+      console.error(e); 
+      alert("新增失敗"); 
+    }
+  };
+
+  // 刪除自訂人員
+  const handleRemoveCustomStaff = async (e, nameToRemove) => {
+    e.stopPropagation(); // 避免觸發選擇人員
+    if (!window.confirm(`確定要從系統中移除「${nameToRemove}」嗎？`)) return;
+    if (isDemoMode) return alert("預覽模式無法刪除名單");
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list');
+      await updateDoc(docRef, { customList: arrayRemove(nameToRemove) });
+    } catch (e) { 
+      console.error(e); 
+      alert("刪除失敗"); 
     }
   };
 
@@ -413,6 +443,7 @@ export default function App() {
     return onAuthStateChanged(auth, (u) => setUser(u));
   }, []);
 
+  // 監聽查房紀錄
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'inspections'));
@@ -426,6 +457,17 @@ export default function App() {
       setLoading(false); 
       setIsDemoMode(true);
     });
+  }, [user]);
+
+  // 監聽自訂人員名單
+  useEffect(() => {
+    if (!user) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list');
+    return onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists() && docSnap.data().customList) {
+        setCustomStaffList(docSnap.data().customList);
+      }
+    }, (error) => console.log("Staff list read failed", error));
   }, [user]);
 
   const stats = (() => {
@@ -452,6 +494,12 @@ export default function App() {
       const report = await callGemini(prompt);
       setAiReport(report);
     } catch (e) { alert("報表生成失敗"); } finally { setIsReportLoading(false); }
+  };
+
+  // 取得最終顯示的人員名單 (內建 + 自訂)
+  const getMergedStaffList = () => {
+    const combined = Array.from(new Set([...INITIAL_STAFF, ...customStaffList]));
+    return combined.sort((a, b) => a.localeCompare(b, 'zh-TW'));
   };
 
   if (loading) return <LoadingSpinner />;
@@ -657,10 +705,45 @@ export default function App() {
       {showStaffModal && (
         <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-6 backdrop-blur-sm font-sans">
           <div className="bg-white w-full h-[70vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden font-sans">
-            <div className="p-5 border-b flex justify-between items-center bg-white font-serif"><h3 className="font-bold tracking-widest">{historyEditTarget ? '修正人員' : '選擇人員'}</h3><button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null);}} className="p-2"><X size={24}/></button></div>
-            <div className="p-4 flex gap-2 bg-white"><div className="relative flex-1"><Search className="absolute left-3 top-3 text-[#BBB]" size={18} /><input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm font-sans" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} /></div><button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-all ${isEditMode ? 'bg-[#2C2C2C] text-white' : 'bg-[#F0F0F0]'}`}><Edit2 size={18}/></button></div>
-            {isEditMode && (<div className="px-4 py-4 flex gap-2 animate-in slide-in-from-top-2 bg-white"><input className="flex-1 border border-gray-200 p-3 rounded-xl text-sm font-sans" placeholder="新增姓名..." value={newStaffName} onChange={e => setNewStaffName(e.target.value)} /><button onClick={async () => { if (!newStaffName.trim()) return; const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'staff_list'); await updateDoc(docRef, { bed: arrayUnion(newStaffName.trim()), water: arrayUnion(newStaffName.trim()) }); setNewStaffName(''); }} className="bg-black text-white px-4 rounded-xl text-xs font-bold uppercase font-sans">ADD</button></div>)}
-            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">{INITIAL_STAFF.filter(n => n.includes(staffSearch)).map(n => (<button key={n} onClick={() => selectStaff(n)} className="py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm active:scale-95 transition-all border border-transparent hover:border-indigo-200 font-sans">{n}</button>))}</div>
+            <div className="p-5 border-b flex justify-between items-center bg-white font-serif">
+              <h3 className="font-bold tracking-widest">{historyEditTarget ? '修正人員' : '選擇人員'}</h3>
+              <button onClick={() => {setShowStaffModal(false); setHistoryEditTarget(null); setIsEditMode(false);}} className="p-2"><X size={24}/></button>
+            </div>
+            
+            <div className="p-4 flex gap-2 bg-white">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-3 text-[#BBB]" size={18} />
+                <input className="w-full bg-[#F5F5F0] p-3 pl-10 rounded-xl outline-none text-sm font-sans" placeholder="搜尋姓名..." value={staffSearch} onChange={e => setStaffSearch(e.target.value)} />
+              </div>
+              <button onClick={() => setIsEditMode(!isEditMode)} className={`p-3 rounded-xl transition-all ${isEditMode ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-[#F0F0F0]'}`}>
+                <Edit2 size={18}/>
+              </button>
+            </div>
+            
+            {isEditMode && (
+              <div className="px-4 py-4 flex gap-2 animate-in slide-in-from-top-2 bg-white border-b border-gray-100">
+                <input className="flex-1 border border-gray-300 p-3 rounded-xl text-sm font-sans focus:border-black outline-none" placeholder="輸入要新增的人員姓名..." value={newStaffName} onChange={e => setNewStaffName(e.target.value)} />
+                <button onClick={handleAddCustomStaff} className="bg-black text-white px-5 rounded-xl text-xs font-bold uppercase tracking-widest active:scale-95 transition-transform">加入</button>
+              </div>
+            )}
+            
+            <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 bg-gray-50">
+              {getMergedStaffList().filter(n => n.includes(staffSearch)).map(n => {
+                const isCustom = customStaffList.includes(n);
+                return (
+                  <div key={n} className="relative">
+                    <button onClick={() => !isEditMode && selectStaff(n)} disabled={isEditMode} className={`w-full py-4 px-4 bg-white rounded-xl text-sm font-bold text-[#444] text-left shadow-sm transition-all border font-sans ${isEditMode ? 'border-gray-200 opacity-60' : 'border-transparent active:scale-95 hover:border-indigo-200'}`}>
+                      {n}
+                    </button>
+                    {isEditMode && isCustom && (
+                      <button onClick={(e) => handleRemoveCustomStaff(e, n)} className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:scale-110 transition-transform">
+                        <MinusCircle size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
