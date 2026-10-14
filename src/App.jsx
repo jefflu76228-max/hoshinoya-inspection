@@ -19,6 +19,7 @@ const getEnvVar = (key) => {
   try { return import.meta.env[key]; } catch (e) { return undefined; }
 };
 
+// --- Firebase 與 API Key 設定 ---
 let firebaseConfig = {
   apiKey: "AIzaSyAAN5u8Deq2J3O8FG9H5m40125fnZq8kSE",
   authDomain: "hoshinoya-guguan-inspection.firebaseapp.com",
@@ -253,6 +254,7 @@ export default function App() {
   const [resetPwd, setResetPwd] = useState('');
   const [resetMode, setResetMode] = useState('all'); 
   const [targetDeleteId, setTargetDeleteId] = useState(null);
+  
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [staffModalTarget, setStaffModalTarget] = useState(null); 
   const [staffSearch, setStaffSearch] = useState('');
